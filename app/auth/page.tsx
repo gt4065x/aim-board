@@ -46,6 +46,30 @@ export default function AuthPage() {
       return
     }
 
+    if (error) {
+      setError(error.message)
+      setLoading(false)
+      return
+    }
+
+    if (data.user) {
+      const profileRow = {
+        id: data.user.id,
+        username: username.trim(),
+        flag,
+        role: 'student',
+        avatar_letter: username.trim()[0]?.toUpperCase() ?? 'U',
+      }
+
+      const { error: profileInsertError } = await (supabase as any)
+        .from('profiles')
+        .upsert([profileRow])
+
+      if (profileInsertError) {
+        console.error('profile upsert error:', profileInsertError)
+      }
+    }
+
     const {
       data: { session },
     } = await supabase.auth.getSession()
