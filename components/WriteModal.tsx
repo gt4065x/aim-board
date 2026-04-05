@@ -21,11 +21,15 @@ const CATEGORY_ITEMS: Array<{ key: Category; label: string; icon: string }> = [
   { key: 'event', label: '이벤트', icon: '🎉' },
 ]
 
-const LANGUAGE_ITEMS = [
-  { key: 'ko', label: '한국어', short: 'KR' },
-  { key: 'en', label: 'English', short: 'US' },
-  { key: 'zh', label: '中文', short: 'CN' },
-]
+const LANGUAGE_ITEMS: Array<{
+  key: 'ko' | 'en' | 'zh'
+  label: string
+  short: string
+}> = [
+    { key: 'ko', label: '한국어', short: 'KR' },
+    { key: 'en', label: 'English', short: 'US' },
+    { key: 'zh', label: '中文', short: 'CN' },
+  ]
 
 export default function WriteModal({ userId, onClose, onPosted }: Props) {
   const supabase = createClient()
