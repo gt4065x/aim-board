@@ -1,66 +1,46 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { Post, Profile, Category } from '@/lib/types'
 import PostCard from '@/components/PostCard'
 import WriteModal from '@/components/WriteModal'
-import RightPanel from '@/components/RightPanel'
-import { ToastProvider } from '@/components/Toast'
-
-const NAV_ITEMS = [
-  { icon: '🏠', label: '전체 피드', category: null, badge: null, badgeCls: '' },
-  { icon: '🔥', label: '인기글', category: 'hot', badge: null, badgeCls: '' },
-  { icon: '📢', label: '공지사항', category: 'notice', badge: null, badgeCls: '' },
-  { icon: '💬', label: '자유게시판', category: 'free', badge: null, badgeCls: '' },
-  { icon: '📚', label: '스터디 모집', category: 'study', badge: null, badgeCls: 'blue' },
-  { icon: '❓', label: 'Q&A', category: 'qa', badge: null, badgeCls: 'green' },
-  { icon: '💼', label: '취업·인턴', category: 'career', badge: null, badgeCls: '' },
-  { icon: '📎', label: '자료 공유', category: 'resource', badge: null, badgeCls: '' },
-  { icon: '🎉', label: '학과 이벤트', category: 'event', badge: null, badgeCls: '' },
-]
 
 interface Props {
   user: User
-  profile: Profile | null
-  initialPosts: Post[]
-  stats: { posts: number; members: number; today: number }
+  profile: Profile
+  initialPosts: FeedPost[]
+  stats: {
+    posts: number
+    members: number
+    today: number
+  }
 }
 
 type FeedPost = Post & {
   user_liked?: boolean
-  likes?: Array<{ count: number }>
-  comments?: Array<{ count: number }>
-  profiles?: Profile | null
 }
 
-type LikeRow = {
-  post_id: string
-}
-
-function FeedInner({ user, profile, initialPosts, stats }: Props) {
+export default function FeedClient({
+  user,
+  profile,
+  initialPosts,
+  stats,
+}: Props) {
   const router = useRouter()
   const supabase = createClient()
 
-  const [posts, setPosts] = useState<FeedPost[]>(initialPosts as FeedPost[])
-  const [search, setSearch] = useState('')
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<'new' | 'hot' | 'all'>('all')
-  const [langFilter, setLangFilter] = useState({ ko: true, en: true, zh: true })
-  const [showModal, setShowModal] = useState(false)
+  const [posts, setPosts] = useState<FeedPost[]>(initialPosts ?? [])
+  const [loading, setLoading] = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all')
+  const [showWriteModal, setShowWriteModal] = useState(false)
 
-  const avatarLetter = profile?.avatar_letter ?? user.email?.[0]?.toUpperCase() ?? 'U'
+  const fetchPosts = useCallback(async () => {
+    setLoading(true)
 
-  async function signOut() {
-    await supabase.auth.signOut()
-    router.replace('/auth')
-    router.refresh()
-  }
-
-  const refreshPosts = useCallback(async () => {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('posts')
       .select(`
         *,
@@ -73,24 +53,29 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
       .limit(30)
 
     if (error) {
-      console.error('refreshPosts posts error:', error)
+      console.error('fetch posts error:', error)
+      setLoading(false)
       return
     }
 
-    const postRows = (data ?? []) as FeedPost[]
+    const postRows = ((data ?? []) as any[]).map((p) => ({
+      ...p,
+      user_liked: false,
+    })) as FeedPost[]
 
-    const { data: myLikes, error: likesError } = await supabase
+    const { data: myLikes, error: likesError } = await (supabase as any)
       .from('likes')
       .select('post_id')
       .eq('user_id', user.id)
 
     if (likesError) {
-      console.error('refreshPosts likes error:', likesError)
+      console.error('fetch likes error:', likesError)
       setPosts(postRows)
+      setLoading(false)
       return
     }
 
-    const likedRows = (myLikes ?? []) as LikeRow[]
+    const likedRows = (myLikes ?? []) as Array<{ post_id: string }>
     const likedIds = new Set(likedRows.map((l) => l.post_id))
 
     setPosts(
@@ -99,218 +84,136 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
         user_liked: likedIds.has(p.id),
       }))
     )
+
+    setLoading(false)
   }, [supabase, user.id])
 
-  const filtered = posts
-    .filter((p) => {
-      if (activeCategory && activeCategory !== 'hot' && p.category !== activeCategory) return false
-      if (!langFilter[p.language as keyof typeof langFilter]) return false
+  useEffect(() => {
+    setPosts(initialPosts ?? [])
+  }, [initialPosts])
 
-      if (search) {
-        const q = search.toLowerCase()
-        const title = p.title?.toLowerCase?.() ?? ''
-        const body = p.body?.toLowerCase?.() ?? ''
-        if (!title.includes(q) && !body.includes(q)) return false
-      }
+  const filteredPosts = useMemo(() => {
+    if (selectedCategory === 'all') return posts
+    return posts.filter((post) => post.category === selectedCategory)
+  }, [posts, selectedCategory])
 
-      return true
-    })
-    .sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1
-      if (!a.pinned && b.pinned) return 1
-
-      if (sortBy === 'hot' || activeCategory === 'hot') {
-        return (b.likes?.[0]?.count ?? 0) - (a.likes?.[0]?.count ?? 0)
-      }
-
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    })
-
-  const feedTitle = NAV_ITEMS.find((n) => n.category === activeCategory)?.label ?? '전체 피드'
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.replace('/auth')
+    router.refresh()
+  }
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="logo">
-          <div className="logo-icon">🤖</div>
-          <div>
-            AI경영학과
-            <span className="logo-sub">Woosong · Community</span>
-          </div>
+    <main className="feed-page">
+      <header className="feed-header">
+        <div>
+          <h1>AI 경영학과 커뮤니티</h1>
+          <p>안녕하세요, {profile?.username ?? user.email ?? '사용자'}님</p>
         </div>
 
-        <div className="topbar-search">
-          <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            placeholder="게시글 검색 / Search / 搜索..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="lang-switcher">
-          <button className="lang-btn ko active">KO</button>
-          <button className="lang-btn en">EN</button>
-          <button className="lang-btn zh">ZH</button>
-        </div>
-
-        <div className="topbar-actions">
-          <div className="notif-btn">
-            🔔
-            <div className="notif-dot" />
-          </div>
-          <div
-            className="avatar-btn"
-            title={profile?.username ?? user.email}
-            onClick={signOut}
-            style={{ cursor: 'pointer' }}
-          >
-            {avatarLetter}
-          </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="write-btn" onClick={() => setShowWriteModal(true)}>
+            새 글 작성
+          </button>
+          <button className="logout-btn" onClick={handleLogout}>
+            로그아웃
+          </button>
         </div>
       </header>
 
-      <aside className="sidebar">
-        <button className="write-btn" onClick={() => setShowModal(true)}>
-          ✏️ 글쓰기
+      <section className="stats-bar">
+        <div className="stat-card">
+          <div className="stat-label">전체 게시글</div>
+          <div className="stat-value">{stats.posts}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">전체 회원</div>
+          <div className="stat-value">{stats.members}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">오늘 작성</div>
+          <div className="stat-value">{stats.today}</div>
+        </div>
+      </section>
+
+      <section className="feed-filters">
+        <button
+          className={selectedCategory === 'all' ? 'active' : ''}
+          onClick={() => setSelectedCategory('all')}
+        >
+          전체
         </button>
+        <button
+          className={selectedCategory === 'free' ? 'active' : ''}
+          onClick={() => setSelectedCategory('free')}
+        >
+          자유
+        </button>
+        <button
+          className={selectedCategory === 'qa' ? 'active' : ''}
+          onClick={() => setSelectedCategory('qa')}
+        >
+          Q&A
+        </button>
+        <button
+          className={selectedCategory === 'study' ? 'active' : ''}
+          onClick={() => setSelectedCategory('study')}
+        >
+          스터디
+        </button>
+        <button
+          className={selectedCategory === 'career' ? 'active' : ''}
+          onClick={() => setSelectedCategory('career')}
+        >
+          취업
+        </button>
+        <button
+          className={selectedCategory === 'notice' ? 'active' : ''}
+          onClick={() => setSelectedCategory('notice')}
+        >
+          공지
+        </button>
+        <button
+          className={selectedCategory === 'resource' ? 'active' : ''}
+          onClick={() => setSelectedCategory('resource')}
+        >
+          자료
+        </button>
+        <button
+          className={selectedCategory === 'event' ? 'active' : ''}
+          onClick={() => setSelectedCategory('event')}
+        >
+          이벤트
+        </button>
+      </section>
 
-        <div className="sidebar-section">
-          <div className="sidebar-label">메인</div>
-          {NAV_ITEMS.slice(0, 2).map((item) => (
-            <div
-              key={item.label}
-              className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => {
-                setActiveCategory(item.category)
-                if (item.category === 'hot') {
-                  setSortBy('hot')
-                } else {
-                  setSortBy('all')
-                }
-              }}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
-            </div>
-          ))}
-        </div>
+      <section className="feed-list">
+        {loading ? (
+          <div className="empty-state">불러오는 중...</div>
+        ) : filteredPosts.length === 0 ? (
+          <div className="empty-state">아직 게시글이 없습니다.</div>
+        ) : (
+          filteredPosts.map((post, idx) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              userId={user.id}
+              animDelay={idx * 0.03}
+            />
+          ))
+        )}
+      </section>
 
-        <div className="sidebar-divider" />
-
-        <div className="sidebar-section">
-          <div className="sidebar-label">게시판</div>
-          {NAV_ITEMS.slice(2).map((item) => (
-            <div
-              key={item.label}
-              className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => {
-                setActiveCategory(item.category as Category)
-                setSortBy('all')
-              }}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
-            </div>
-          ))}
-        </div>
-
-        <div className="sidebar-divider" />
-
-        <div className="sidebar-section">
-          <div className="sidebar-label">내 정보</div>
-          <div className="nav-item" style={{ color: 'var(--text2)', fontSize: 12 }}>
-            <span className="nav-icon">{profile?.flag ?? '🌍'}</span>
-            {profile?.username ?? user.email}
-          </div>
-          <div className="nav-item" onClick={signOut}>
-            <span className="nav-icon">🚪</span>
-            로그아웃
-          </div>
-        </div>
-      </aside>
-
-      <main className="main">
-        <div className="mobile-note">📱 데스크톱에서 최적화된 전체 레이아웃을 볼 수 있습니다</div>
-
-        <div className="feed-header">
-          <div className="feed-title">{feedTitle}</div>
-
-          <div className="filter-tabs">
-            <button
-              className={`filter-tab ${sortBy === 'all' ? 'active' : ''}`}
-              onClick={() => setSortBy('all')}
-            >
-              전체
-            </button>
-            <button
-              className={`filter-tab ${sortBy === 'hot' ? 'active' : ''}`}
-              onClick={() => setSortBy('hot')}
-            >
-              인기순
-            </button>
-            <button
-              className={`filter-tab ${sortBy === 'new' ? 'active' : ''}`}
-              onClick={() => setSortBy('new')}
-            >
-              최신순
-            </button>
-          </div>
-
-          <div className="lang-filter">
-            {(['ko', 'en', 'zh'] as const).map((lang) => (
-              <button
-                key={lang}
-                className={`lf-btn ${lang} ${langFilter[lang] ? 'on' : ''}`}
-                onClick={() => setLangFilter((prev) => ({ ...prev, [lang]: !prev[lang] }))}
-              >
-                {lang === 'ko' ? '🇰🇷 KO' : lang === 'en' ? '🇺🇸 EN' : '🇨🇳 ZH'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="feed">
-          {filtered.length === 0 ? (
-            <div className="empty-state">
-              <div className="emoji">📭</div>
-              <p>
-                게시글이 없습니다.
-                <br />
-                첫 번째 글을 작성해보세요!
-              </p>
-            </div>
-          ) : (
-            filtered.map((post, i) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                userId={user.id}
-                animDelay={Math.min(i * 0.05, 0.3)}
-              />
-            ))
-          )}
-        </div>
-      </main>
-
-      <RightPanel stats={stats} />
-
-      {showModal && (
+      {showWriteModal && (
         <WriteModal
           userId={user.id}
-          onClose={() => setShowModal(false)}
-          onPosted={refreshPosts}
+          onClose={() => setShowWriteModal(false)}
+          onPosted={async () => {
+            setShowWriteModal(false)
+            await fetchPosts()
+          }}
         />
       )}
-    </div>
-  )
-}
-
-export default function FeedClient(props: Props) {
-  return (
-    <ToastProvider>
-      <FeedInner {...props} />
-    </ToastProvider>
+    </main>
   )
 }

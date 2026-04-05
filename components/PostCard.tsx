@@ -33,14 +33,9 @@ function timeAgo(dateStr: string) {
 }
 
 interface Props {
-  post: Post
+  post: Post & { user_liked?: boolean }
   userId: string | null
   animDelay?: number
-}
-
-type LikeInsertRow = {
-  post_id: string
-  user_id: string
 }
 
 export default function PostCard({ post, userId, animDelay = 0 }: Props) {
@@ -67,7 +62,7 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
       setLiked(false)
       setLikes((l) => l - 1)
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('likes')
         .delete()
         .eq('post_id', post.id)
@@ -83,14 +78,14 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
       setLiked(true)
       setLikes((l) => l + 1)
 
-      const insertRow: LikeInsertRow = {
+      const insertRow = {
         post_id: post.id,
         user_id: userId,
       }
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('likes')
-        .insert([insertRow] as LikeInsertRow[])
+        .insert([insertRow])
 
       if (error) {
         console.error('insert like error:', error)

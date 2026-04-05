@@ -1,8 +1,8 @@
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js'
 
-let client: ReturnType<typeof createSupabaseClient> | null = null
+let client: SupabaseClient | null = null
 
-export function createClient() {
+export function createClient(): SupabaseClient {
   if (client) return client
 
   client = createSupabaseClient(

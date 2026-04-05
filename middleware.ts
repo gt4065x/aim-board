@@ -24,7 +24,6 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    // 🔥 이 줄이 핵심 (세션 동기화)
     await supabase.auth.getUser()
 
     return response
