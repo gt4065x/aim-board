@@ -190,7 +190,22 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
       </aside>
 
       <main className="main">
-        <div className="mobile-note">📱 데스크톱에서 최적화된 전체 레이아웃을 볼 수 있습니다</div>
+        <nav className="mobile-cat-bar">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.label}
+              className={`mobile-cat-item ${activeCategory === item.category ? 'active' : ''}`}
+              onClick={() => {
+                setActiveCategory(item.category as Category | null)
+                if (item.category === 'hot') setSortBy('hot')
+                else setSortBy('all')
+              }}
+            >
+              <span>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
 
         <div className="feed-header">
           <div className="feed-title">{feedTitle}</div>
@@ -242,6 +257,10 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
       </main>
 
       <RightPanel stats={stats} />
+
+      <button className="mobile-fab" onClick={() => setShowModal(true)} aria-label="글쓰기">
+        ✏️
+      </button>
 
       {showModal && (
         <WriteModal

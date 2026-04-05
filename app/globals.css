@@ -1284,19 +1284,16 @@ body {
   justify-content: center;
 }
 
-/* ─── RESPONSIVE ─── */
-.mobile-note {
+/* ─── MOBILE COMPONENTS (hidden on desktop) ─── */
+.mobile-cat-bar {
   display: none;
-  background: rgba(255, 212, 59, 0.1);
-  border: 1px solid rgba(255, 212, 59, 0.3);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 12px;
-  color: var(--gold);
-  text-align: center;
-  margin: 12px;
 }
 
+.mobile-fab {
+  display: none;
+}
+
+/* ─── RESPONSIVE ─── */
 @media (max-width: 1024px) {
   .right-panel {
     display: none;
@@ -1308,16 +1305,207 @@ body {
 }
 
 @media (max-width: 768px) {
-  .mobile-note {
-    display: block;
-  }
-
+  /* ── Layout ── */
   .app {
     grid-template-columns: 1fr;
     grid-template-rows: 56px 1fr;
+    height: 100dvh;
   }
 
   .sidebar {
     display: none;
+  }
+
+  /* ── Topbar ── */
+  .topbar {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .logo-sub {
+    display: none;
+  }
+
+  .topbar-search {
+    flex: 1;
+    max-width: none;
+    margin-left: 0;
+  }
+
+  .lang-switcher {
+    display: none;
+  }
+
+  .notif-btn {
+    display: none;
+  }
+
+  /* ── Mobile category bar ── */
+  .mobile-cat-bar {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 90;
+    flex-shrink: 0;
+  }
+
+  .mobile-cat-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-cat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    cursor: pointer;
+    color: var(--text2);
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: 'Noto Sans KR', sans-serif;
+    transition: all .15s;
+  }
+
+  .mobile-cat-item span:first-child {
+    font-size: 18px;
+  }
+
+  .mobile-cat-item span:last-child {
+    font-size: 10px;
+  }
+
+  .mobile-cat-item:hover {
+    background: var(--surface2);
+    color: var(--text);
+  }
+
+  .mobile-cat-item.active {
+    background: var(--glow);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Feed header ── */
+  .feed-header {
+    padding: 12px 12px 0;
+    gap: 8px;
+  }
+
+  .feed-title {
+    font-size: 18px;
+    width: 100%;
+  }
+
+  .filter-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+
+  .filter-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lang-filter {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+
+  .lang-filter::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ── Feed & cards ── */
+  .feed {
+    padding: 10px 12px 90px;
+  }
+
+  .post-card {
+    padding: 14px;
+  }
+
+  .post-footer {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .translate-btn {
+    margin-left: 0;
+  }
+
+  /* ── Floating write button (FAB) ── */
+  .mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 24px;
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 50%;
+    font-size: 22px;
+    cursor: pointer;
+    z-index: 150;
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.5);
+    transition: transform .2s, box-shadow .2s;
+  }
+
+  .mobile-fab:active {
+    transform: scale(0.94);
+    box-shadow: 0 2px 12px rgba(124, 58, 237, 0.6);
+  }
+
+  /* ── Modal – bottom sheet ── */
+  .modal-overlay,
+  .modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal,
+  .write-modal {
+    max-width: 100%;
+    border-radius: 20px 20px 0 0;
+    max-height: 92dvh;
+    padding: 20px 16px 32px;
+  }
+
+  /* ── Toast – above FAB ── */
+  .toast {
+    bottom: 96px;
+    right: 16px;
+    left: 16px;
+    max-width: none;
+    transform: translateY(60px);
+    opacity: 0;
+    transition: transform .3s cubic-bezier(.4, 0, .2, 1), opacity .3s;
+  }
+
+  .toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  /* ── Auth card ── */
+  .auth-card {
+    padding: 28px 20px;
+    border-radius: 16px;
   }
 }
