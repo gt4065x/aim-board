@@ -25,26 +25,55 @@ export default function AuthPage() {
     { emoji: '🌍', label: '기타' },
   ]
 
+  // 🔥 로그인
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    console.log('login data:', data)
+    console.error('login error:', error)
+
     if (error) {
       setError(error.message)
-    } else {
-      router.replace('/')
-      router.refresh()
+      setLoading(false)
+      return
     }
+
+    // 🔥 핵심: 세션 체크
+    if (!data.session) {
+      setError('로그인 세션이 생성되지 않았습니다')
+      setLoading(false)
+      return
+    }
+
+    // 🔥 세션 안정화 (중요)
+    await new Promise((res) => setTimeout(res, 200))
+
+    router.replace('/')
+    router.refresh()
+
     setLoading(false)
   }
 
+  // 🔥 회원가입
   async function handleSignup(e: React.FormEvent) {
     e.preventDefault()
-    if (!username.trim()) { setError('이름을 입력해주세요'); return }
+
+    if (!username.trim()) {
+      setError('이름을 입력해주세요')
+      return
+    }
+
     setLoading(true)
     setError('')
-    const { error } = await supabase.auth.signUp({
+
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -55,12 +84,28 @@ export default function AuthPage() {
         },
       },
     })
+
+    console.log('signup data:', data)
+    console.error('signup error:', error)
+
     if (error) {
       setError(error.message)
-    } else {
-      router.replace('/')
-      router.refresh()
+      setLoading(false)
+      return
     }
+
+    // 🔥 이메일 인증 여부 대응
+    if (!data.session) {
+      setError('이메일 인증 후 로그인해주세요')
+      setLoading(false)
+      return
+    }
+
+    await new Promise((res) => setTimeout(res, 200))
+
+    router.replace('/')
+    router.refresh()
+
     setLoading(false)
   }
 
@@ -71,17 +116,38 @@ export default function AuthPage() {
           <div className="auth-logo-icon">🤖</div>
           <div>
             AI경영학과
-            <span style={{ display: 'block', fontFamily: 'DM Mono, monospace', fontSize: 10, letterSpacing: 2, color: 'var(--text3)', textTransform: 'uppercase' }}>
+            <span
+              style={{
+                display: 'block',
+                fontFamily: 'DM Mono, monospace',
+                fontSize: 10,
+                letterSpacing: 2,
+                color: 'var(--text3)',
+                textTransform: 'uppercase',
+              }}
+            >
               Woosong · Community
             </span>
           </div>
         </div>
 
         <div className="auth-tabs">
-          <button className={`auth-tab ${tab === 'login' ? 'active' : ''}`} onClick={() => { setTab('login'); setError('') }}>
+          <button
+            className={`auth-tab ${tab === 'login' ? 'active' : ''}`}
+            onClick={() => {
+              setTab('login')
+              setError('')
+            }}
+          >
             로그인
           </button>
-          <button className={`auth-tab ${tab === 'signup' ? 'active' : ''}`} onClick={() => { setTab('signup'); setError('') }}>
+          <button
+            className={`auth-tab ${tab === 'signup' ? 'active' : ''}`}
+            onClick={() => {
+              setTab('signup')
+              setError('')
+            }}
+          >
             회원가입
           </button>
         </div>
@@ -94,22 +160,26 @@ export default function AuthPage() {
               <div className="modal-field">
                 <label className="field-label">이름 (닉네임)</label>
                 <input
+                  id="username"
+                  name="username"
                   className="field-input"
                   type="text"
                   placeholder="홍길동 / Zhang Wei / Alex"
                   value={username}
-                  onChange={e => setUsername(e.target.value)}
+                  onChange={(e) => setUsername(e.target.value)}
                   required
                 />
               </div>
+
               <div className="modal-field">
                 <label className="field-label">국가</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {flags.map(f => (
+                  {flags.map((f) => (
                     <button
                       key={f.emoji}
                       type="button"
-                      className={`cat-pill ${flag === f.emoji ? 'selected' : ''}`}
+                      className={`cat-pill ${flag === f.emoji ? 'selected' : ''
+                        }`}
                       onClick={() => setFlag(f.emoji)}
                     >
                       {f.emoji} {f.label}
@@ -123,11 +193,14 @@ export default function AuthPage() {
           <div className="modal-field">
             <label className="field-label">이메일</label>
             <input
+              id="email"
+              name="email"
               className="field-input"
               type="email"
               placeholder="student@woosong.org"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
@@ -135,11 +208,14 @@ export default function AuthPage() {
           <div className="modal-field">
             <label className="field-label">비밀번호</label>
             <input
+              id="password"
+              name="password"
               className="field-input"
               type="password"
               placeholder="8자 이상"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
               minLength={8}
             />
@@ -151,7 +227,11 @@ export default function AuthPage() {
             style={{ width: '100%', marginTop: 8, padding: '12px' }}
             disabled={loading}
           >
-            {loading ? '처리 중...' : tab === 'login' ? '로그인' : '가입하기 🚀'}
+            {loading
+              ? '처리 중...'
+              : tab === 'login'
+                ? '로그인'
+                : '가입하기 🚀'}
           </button>
         </form>
       </div>
