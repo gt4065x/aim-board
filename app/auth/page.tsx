@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { FormEvent } from 'react'
 
 export default function AuthPage() {
   const router = useRouter()
@@ -26,7 +27,7 @@ export default function AuthPage() {
   ]
 
   // 🔥 로그인
-  async function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
@@ -45,24 +46,25 @@ export default function AuthPage() {
       return
     }
 
-    // 🔥 핵심: 세션 체크
-    if (!data.session) {
-      setError('로그인 세션이 생성되지 않았습니다')
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    console.log('client session after login:', session)
+
+    if (!session) {
+      setError('로그인은 되었지만 세션을 확인하지 못했습니다.')
       setLoading(false)
       return
     }
 
-    // 🔥 세션 안정화 (중요)
-    await new Promise((res) => setTimeout(res, 200))
-
     router.replace('/')
     router.refresh()
-
     setLoading(false)
   }
 
   // 🔥 회원가입
-  async function handleSignup(e: React.FormEvent) {
+  async function handleSignup(e: FormEvent) {
     e.preventDefault()
 
     if (!username.trim()) {

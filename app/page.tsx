@@ -13,6 +13,8 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser()
 
+  console.log('SERVER USER:', user)
+
   if (!user) {
     redirect('/auth')
   }
