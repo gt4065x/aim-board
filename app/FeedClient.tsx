@@ -27,7 +27,6 @@ export default function FeedClient({
   user,
   profile,
   initialPosts,
-  stats,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -120,21 +119,6 @@ export default function FeedClient({
           </button>
         </div>
       </header>
-
-      <section className="stats-bar">
-        <div className="stat-card">
-          <div className="stat-label">전체 게시글</div>
-          <div className="stat-value">{stats.posts}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">전체 회원</div>
-          <div className="stat-value">{stats.members}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">오늘 작성</div>
-          <div className="stat-value">{stats.today}</div>
-        </div>
-      </section>
 
       <section className="feed-filters">
         <button
