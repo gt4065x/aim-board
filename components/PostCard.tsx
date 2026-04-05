@@ -48,6 +48,36 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
   const [liked, setLiked] = useState(post.user_liked ?? false)
   const [likes, setLikes] = useState(likeCount)
 
+  const [translated, setTranslated] = useState<{ title: string; body: string } | null>(null)
+  const [translating, setTranslating] = useState(false)
+  const [showTranslated, setShowTranslated] = useState(false)
+
+  async function handleTranslate() {
+    if (translated) {
+      setShowTranslated((v) => !v)
+      return
+    }
+    setTranslating(true)
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: post.title, body: post.body, targetLang: 'ko' }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        showToast('❌', data.error)
+      } else {
+        setTranslated(data)
+        setShowTranslated(true)
+      }
+    } catch {
+      showToast('❌', '번역 중 오류가 발생했습니다.')
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   const profile = post.profiles
   const avCls = profile ? avatarClass(profile.flag) : 'av-ko'
   const catInfo = CATEGORY_INFO[post.category] ?? { label: post.category, cls: 'cat-free' }
@@ -121,8 +151,16 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
         <span className={`post-category ${catInfo.cls}`}>{catInfo.label}</span>
       </div>
 
-      <div className="post-title">{post.title}</div>
-      <div className="post-body">{post.body}</div>
+      <div className="post-title">
+        {showTranslated && translated ? translated.title : post.title}
+      </div>
+      <div className="post-body">
+        {showTranslated && translated ? translated.body : post.body}
+      </div>
+
+      {showTranslated && translated && (
+        <div className="translate-badge">🌐 AI 번역됨 (원문 언어: {post.language})</div>
+      )}
 
       <div className="post-footer">
         <button
@@ -132,6 +170,14 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
           👍 <span>{likes}</span>
         </button>
         <span className="comment-count">💬 {commentCount}</span>
+        <button
+          className={`react-btn translate-btn ${showTranslated ? 'active' : ''}`}
+          onClick={handleTranslate}
+          disabled={translating}
+          title="ChatGPT로 한국어 번역"
+        >
+          {translating ? '⏳' : '🌐'} <span>{translating ? '번역 중...' : showTranslated ? '원문 보기' : 'AI 번역'}</span>
+        </button>
       </div>
     </div>
   )

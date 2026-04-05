@@ -636,6 +636,7 @@ body {
   line-height: 1.6;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -682,6 +683,35 @@ body {
   align-items: center;
   gap: 4px;
   font-family: 'DM Mono', monospace;
+}
+
+.translate-btn {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text3);
+}
+
+.translate-btn:hover {
+  color: var(--text);
+  border-color: var(--border2);
+  background: var(--surface2);
+}
+
+.translate-btn.active {
+  border-color: rgba(99, 179, 237, 0.5);
+  background: rgba(99, 179, 237, 0.08);
+  color: #63b3ed;
+}
+
+.translate-badge {
+  font-size: 11px;
+  color: var(--text3);
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(99, 179, 237, 0.08);
+  border: 1px solid rgba(99, 179, 237, 0.2);
+  display: inline-block;
+  margin-bottom: 4px;
 }
 
 /* ─── RIGHT PANEL ─── */
