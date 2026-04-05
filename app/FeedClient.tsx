@@ -11,15 +11,15 @@ import RightPanel from '@/components/RightPanel'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_ITEMS = [
-  { icon: '🏠', label: '전체 피드',  category: null,       badge: null,    badgeCls: '' },
-  { icon: '🔥', label: '인기글',     category: 'hot',      badge: null,    badgeCls: '' },
-  { icon: '📢', label: '공지사항',   category: 'notice',   badge: null,    badgeCls: '' },
-  { icon: '💬', label: '자유게시판', category: 'free',     badge: null,    badgeCls: '' },
-  { icon: '📚', label: '스터디 모집',category: 'study',    badge: null,    badgeCls: 'blue' },
-  { icon: '❓', label: 'Q&A',        category: 'qa',       badge: null,    badgeCls: 'green' },
-  { icon: '💼', label: '취업·인턴',  category: 'career',   badge: null,    badgeCls: '' },
-  { icon: '📎', label: '자료 공유',  category: 'resource', badge: null,    badgeCls: '' },
-  { icon: '🎉', label: '학과 이벤트',category: 'event',    badge: null,    badgeCls: '' },
+  { icon: '🏠', label: '전체 피드', category: null, badge: null, badgeCls: '' },
+  { icon: '🔥', label: '인기글', category: 'hot', badge: null, badgeCls: '' },
+  { icon: '📢', label: '공지사항', category: 'notice', badge: null, badgeCls: '' },
+  { icon: '💬', label: '자유게시판', category: 'free', badge: null, badgeCls: '' },
+  { icon: '📚', label: '스터디 모집', category: 'study', badge: null, badgeCls: 'blue' },
+  { icon: '❓', label: 'Q&A', category: 'qa', badge: null, badgeCls: 'green' },
+  { icon: '💼', label: '취업·인턴', category: 'career', badge: null, badgeCls: '' },
+  { icon: '📎', label: '자료 공유', category: 'resource', badge: null, badgeCls: '' },
+  { icon: '🎉', label: '학과 이벤트', category: 'event', badge: null, badgeCls: '' },
 ]
 
 interface Props {
@@ -57,10 +57,15 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
       .order('created_at', { ascending: false })
       .limit(30)
 
-    const { data: myLikes } = await supabase.from('likes').select('post_id').eq('user_id', user.id)
-    const likedIds = new Set((myLikes ?? []).map(l => l.post_id))
+    const { data: myLikes } = await supabase
+      .from('likes')
+      .select('post_id')
+      .eq('user_id', user.id)
 
-    setPosts((data ?? []).map(p => ({ ...p, user_liked: likedIds.has(p.id) })))
+    const likedRows = (myLikes ?? []) as { post_id: string }[]
+    const likedIds = new Set(likedRows.map((l) => l.post_id))
+
+    setPosts((data ?? []).map((p) => ({ ...p, user_liked: likedIds.has(p.id) })))
   }, [supabase, user.id])
 
   // 필터링
