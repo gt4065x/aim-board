@@ -8,7 +8,7 @@ import { Post, Profile, Category } from '@/lib/types'
 import PostCard from '@/components/PostCard'
 import WriteModal from '@/components/WriteModal'
 import RightPanel from '@/components/RightPanel'
-import { ToastProvider, useToast } from '@/components/Toast'
+import { ToastProvider } from '@/components/Toast'
 
 const NAV_ITEMS = [
   { icon: '🏠', label: '전체 피드', category: null, badge: null, badgeCls: '' },
@@ -29,12 +29,22 @@ interface Props {
   stats: { posts: number; members: number; today: number }
 }
 
+type FeedPost = Post & {
+  user_liked?: boolean
+  likes?: Array<{ count: number }>
+  comments?: Array<{ count: number }>
+  profiles?: Profile | null
+}
+
+type LikeRow = {
+  post_id: string
+}
+
 function FeedInner({ user, profile, initialPosts, stats }: Props) {
   const router = useRouter()
   const supabase = createClient()
-  const { showToast } = useToast()
 
-  const [posts, setPosts] = useState<Post[]>(initialPosts)
+  const [posts, setPosts] = useState<FeedPost[]>(initialPosts as FeedPost[])
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'new' | 'hot' | 'all'>('all')
@@ -45,52 +55,81 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
 
   async function signOut() {
     await supabase.auth.signOut()
-    router.push('/auth')
+    router.replace('/auth')
     router.refresh()
   }
 
   const refreshPosts = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('posts')
-      .select(`*, profiles (id, username, flag, role, avatar_letter), likes (count), comments (count)`)
+      .select(`
+        *,
+        profiles (id, username, flag, role, avatar_letter),
+        likes (count),
+        comments (count)
+      `)
       .order('pinned', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(30)
 
-    const { data: myLikes } = await supabase
+    if (error) {
+      console.error('refreshPosts posts error:', error)
+      return
+    }
+
+    const postRows = (data ?? []) as FeedPost[]
+
+    const { data: myLikes, error: likesError } = await supabase
       .from('likes')
       .select('post_id')
       .eq('user_id', user.id)
 
-    const likedRows = (myLikes ?? []) as { post_id: string }[]
+    if (likesError) {
+      console.error('refreshPosts likes error:', likesError)
+      setPosts(postRows)
+      return
+    }
+
+    const likedRows = (myLikes ?? []) as LikeRow[]
     const likedIds = new Set(likedRows.map((l) => l.post_id))
 
-    setPosts((data ?? []).map((p) => ({ ...p, user_liked: likedIds.has(p.id) })))
+    setPosts(
+      postRows.map((p) => ({
+        ...p,
+        user_liked: likedIds.has(p.id),
+      }))
+    )
   }, [supabase, user.id])
 
-  // 필터링
-  const filtered = posts.filter(p => {
-    if (activeCategory && activeCategory !== 'hot' && p.category !== activeCategory) return false
-    if (!langFilter[p.language as keyof typeof langFilter]) return false
-    if (search) {
-      const q = search.toLowerCase()
-      if (!p.title.toLowerCase().includes(q) && !p.body.toLowerCase().includes(q)) return false
-    }
-    return true
-  }).sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1
-    if (!a.pinned && b.pinned) return 1
-    if (sortBy === 'hot') {
-      return (b.likes?.[0]?.count ?? 0) - (a.likes?.[0]?.count ?? 0)
-    }
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  })
+  const filtered = posts
+    .filter((p) => {
+      if (activeCategory && activeCategory !== 'hot' && p.category !== activeCategory) return false
+      if (!langFilter[p.language as keyof typeof langFilter]) return false
 
-  const feedTitle = NAV_ITEMS.find(n => n.category === activeCategory)?.label ?? '전체 피드'
+      if (search) {
+        const q = search.toLowerCase()
+        const title = p.title?.toLowerCase?.() ?? ''
+        const body = p.body?.toLowerCase?.() ?? ''
+        if (!title.includes(q) && !body.includes(q)) return false
+      }
+
+      return true
+    })
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+
+      if (sortBy === 'hot' || activeCategory === 'hot') {
+        return (b.likes?.[0]?.count ?? 0) - (a.likes?.[0]?.count ?? 0)
+      }
+
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+
+  const feedTitle = NAV_ITEMS.find((n) => n.category === activeCategory)?.label ?? '전체 피드'
 
   return (
     <div className="app">
-      {/* TOPBAR */}
       <header className="topbar">
         <div className="logo">
           <div className="logo-icon">🤖</div>
@@ -106,7 +145,7 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
             type="text"
             placeholder="게시글 검색 / Search / 搜索..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
@@ -117,14 +156,21 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
         </div>
 
         <div className="topbar-actions">
-          <div className="notif-btn">🔔<div className="notif-dot" /></div>
-          <div className="avatar-btn" title={profile?.username ?? user.email} onClick={signOut} style={{ cursor: 'pointer' }}>
+          <div className="notif-btn">
+            🔔
+            <div className="notif-dot" />
+          </div>
+          <div
+            className="avatar-btn"
+            title={profile?.username ?? user.email}
+            onClick={signOut}
+            style={{ cursor: 'pointer' }}
+          >
             {avatarLetter}
           </div>
         </div>
       </header>
 
-      {/* SIDEBAR */}
       <aside className="sidebar">
         <button className="write-btn" onClick={() => setShowModal(true)}>
           ✏️ 글쓰기
@@ -132,11 +178,18 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
 
         <div className="sidebar-section">
           <div className="sidebar-label">메인</div>
-          {NAV_ITEMS.slice(0, 2).map(item => (
+          {NAV_ITEMS.slice(0, 2).map((item) => (
             <div
               key={item.label}
               className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => { setActiveCategory(item.category); if (item.category === 'hot') setSortBy('hot') }}
+              onClick={() => {
+                setActiveCategory(item.category)
+                if (item.category === 'hot') {
+                  setSortBy('hot')
+                } else {
+                  setSortBy('all')
+                }
+              }}
             >
               <span className="nav-icon">{item.icon}</span>
               {item.label}
@@ -148,11 +201,14 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
 
         <div className="sidebar-section">
           <div className="sidebar-label">게시판</div>
-          {NAV_ITEMS.slice(2).map(item => (
+          {NAV_ITEMS.slice(2).map((item) => (
             <div
               key={item.label}
               className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => { setActiveCategory(item.category as Category); setSortBy('all') }}
+              onClick={() => {
+                setActiveCategory(item.category as Category)
+                setSortBy('all')
+              }}
             >
               <span className="nav-icon">{item.icon}</span>
               {item.label}
@@ -175,23 +231,39 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
         </div>
       </aside>
 
-      {/* MAIN FEED */}
       <main className="main">
         <div className="mobile-note">📱 데스크톱에서 최적화된 전체 레이아웃을 볼 수 있습니다</div>
 
         <div className="feed-header">
           <div className="feed-title">{feedTitle}</div>
+
           <div className="filter-tabs">
-            <button className={`filter-tab ${sortBy === 'all' ? 'active' : ''}`} onClick={() => setSortBy('all')}>전체</button>
-            <button className={`filter-tab ${sortBy === 'hot' ? 'active' : ''}`} onClick={() => setSortBy('hot')}>인기순</button>
-            <button className={`filter-tab ${sortBy === 'new' ? 'active' : ''}`} onClick={() => setSortBy('new')}>최신순</button>
+            <button
+              className={`filter-tab ${sortBy === 'all' ? 'active' : ''}`}
+              onClick={() => setSortBy('all')}
+            >
+              전체
+            </button>
+            <button
+              className={`filter-tab ${sortBy === 'hot' ? 'active' : ''}`}
+              onClick={() => setSortBy('hot')}
+            >
+              인기순
+            </button>
+            <button
+              className={`filter-tab ${sortBy === 'new' ? 'active' : ''}`}
+              onClick={() => setSortBy('new')}
+            >
+              최신순
+            </button>
           </div>
+
           <div className="lang-filter">
-            {(['ko', 'en', 'zh'] as const).map(lang => (
+            {(['ko', 'en', 'zh'] as const).map((lang) => (
               <button
                 key={lang}
                 className={`lf-btn ${lang} ${langFilter[lang] ? 'on' : ''}`}
-                onClick={() => setLangFilter(p => ({ ...p, [lang]: !p[lang] }))}
+                onClick={() => setLangFilter((prev) => ({ ...prev, [lang]: !prev[lang] }))}
               >
                 {lang === 'ko' ? '🇰🇷 KO' : lang === 'en' ? '🇺🇸 EN' : '🇨🇳 ZH'}
               </button>
@@ -203,7 +275,11 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
           {filtered.length === 0 ? (
             <div className="empty-state">
               <div className="emoji">📭</div>
-              <p>게시글이 없습니다.<br />첫 번째 글을 작성해보세요!</p>
+              <p>
+                게시글이 없습니다.
+                <br />
+                첫 번째 글을 작성해보세요!
+              </p>
             </div>
           ) : (
             filtered.map((post, i) => (
@@ -218,10 +294,8 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
         </div>
       </main>
 
-      {/* RIGHT PANEL */}
       <RightPanel stats={stats} />
 
-      {/* WRITE MODAL */}
       {showModal && (
         <WriteModal
           userId={user.id}
