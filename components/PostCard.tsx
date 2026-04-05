@@ -6,13 +6,13 @@ import { createClient } from '@/lib/supabase/client'
 import { useToast } from './Toast'
 
 const CATEGORY_INFO: Record<Category, { label: string; cls: string }> = {
-  free:     { label: '자유',   cls: 'cat-free' },
-  qa:       { label: 'Q&A',   cls: 'cat-qa' },
-  study:    { label: '스터디', cls: 'cat-study' },
-  career:   { label: '취업',   cls: 'cat-career' },
-  notice:   { label: '공지',   cls: 'cat-notice' },
-  resource: { label: '자료',   cls: 'cat-resource' },
-  event:    { label: '이벤트', cls: 'cat-event' },
+  free: { label: '자유', cls: 'cat-free' },
+  qa: { label: 'Q&A', cls: 'cat-qa' },
+  study: { label: '스터디', cls: 'cat-study' },
+  career: { label: '취업', cls: 'cat-career' },
+  notice: { label: '공지', cls: 'cat-notice' },
+  resource: { label: '자료', cls: 'cat-resource' },
+  event: { label: '이벤트', cls: 'cat-event' },
 }
 
 function avatarClass(flag: string) {
@@ -25,7 +25,7 @@ function avatarClass(flag: string) {
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
   const m = Math.floor(diff / 60000)
-  if (m < 1)  return '방금 전'
+  if (m < 1) return '방금 전'
   if (m < 60) return `${m}분 전`
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}시간 전`
@@ -36,6 +36,11 @@ interface Props {
   post: Post
   userId: string | null
   animDelay?: number
+}
+
+type LikeInsertRow = {
+  post_id: string
+  user_id: string
 }
 
 export default function PostCard({ post, userId, animDelay = 0 }: Props) {
@@ -53,13 +58,46 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
   const catInfo = CATEGORY_INFO[post.category] ?? { label: post.category, cls: 'cat-free' }
 
   async function toggleLike() {
-    if (!userId) { showToast('⚠️', '로그인이 필요합니다'); return }
+    if (!userId) {
+      showToast('⚠️', '로그인이 필요합니다')
+      return
+    }
+
     if (liked) {
-      setLiked(false); setLikes(l => l - 1)
-      await supabase.from('likes').delete().match({ post_id: post.id, user_id: userId })
+      setLiked(false)
+      setLikes((l) => l - 1)
+
+      const { error } = await supabase
+        .from('likes')
+        .delete()
+        .eq('post_id', post.id)
+        .eq('user_id', userId)
+
+      if (error) {
+        console.error('delete like error:', error)
+        setLiked(true)
+        setLikes((l) => l + 1)
+        showToast('❌', error.message)
+      }
     } else {
-      setLiked(true); setLikes(l => l + 1)
-      await supabase.from('likes').insert({ post_id: post.id, user_id: userId })
+      setLiked(true)
+      setLikes((l) => l + 1)
+
+      const insertRow: LikeInsertRow = {
+        post_id: post.id,
+        user_id: userId,
+      }
+
+      const { error } = await supabase
+        .from('likes')
+        .insert([insertRow] as LikeInsertRow[])
+
+      if (error) {
+        console.error('insert like error:', error)
+        setLiked(false)
+        setLikes((l) => l - 1)
+        showToast('❌', error.message)
+      }
     }
   }
 
