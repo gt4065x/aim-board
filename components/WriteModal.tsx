@@ -12,12 +12,12 @@ interface Props {
 }
 
 const CATEGORIES: { value: Category; label: string }[] = [
-  { value: 'free',     label: '💬 자유' },
-  { value: 'qa',       label: '❓ Q&A' },
-  { value: 'study',    label: '📚 스터디' },
-  { value: 'career',   label: '💼 취업' },
+  { value: 'free', label: '💬 자유' },
+  { value: 'qa', label: '❓ Q&A' },
+  { value: 'study', label: '📚 스터디' },
+  { value: 'career', label: '💼 취업' },
   { value: 'resource', label: '📎 자료' },
-  { value: 'event',    label: '🎉 이벤트' },
+  { value: 'event', label: '🎉 이벤트' },
 ]
 
 const LANGUAGES: { value: Language; label: string }[] = [
@@ -51,6 +51,7 @@ export default function WriteModal({ userId, onClose, onPosted }: Props) {
     })
     setLoading(false)
     if (error) {
+      console.log('post insert error:', error)
       showToast('❌', '게시글 등록에 실패했습니다')
     } else {
       showToast('🚀', '게시글이 등록되었습니다!')

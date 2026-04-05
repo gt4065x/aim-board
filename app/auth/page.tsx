@@ -33,7 +33,7 @@ export default function AuthPage() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/')
+      router.replace('/')
       router.refresh()
     }
     setLoading(false)
@@ -58,7 +58,7 @@ export default function AuthPage() {
     if (error) {
       setError(error.message)
     } else {
-      router.push('/')
+      router.replace('/')
       router.refresh()
     }
     setLoading(false)
