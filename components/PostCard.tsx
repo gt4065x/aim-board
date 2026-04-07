@@ -67,6 +67,7 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
   const [showDetail, setShowDetail] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [editTitle, setEditTitle] = useState(post.title)
   const [editBody, setEditBody] = useState(post.body)
   const [deleted, setDeleted] = useState(false)
@@ -83,13 +84,13 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
   }, [showMenu])
 
   async function handleDelete() {
-    if (!confirm('정말 삭제하시겠습니까?')) return
     try {
       await deleteDoc(doc(db, 'posts', post.id))
       setDeleted(true)
       showToast('✅', '게시글이 삭제되었습니다.')
-    } catch {
-      showToast('❌', '삭제 중 오류가 발생했습니다.')
+    } catch (e: any) {
+      console.error('[delete] failed:', e)
+      showToast('❌', `삭제 실패: ${e?.code || e?.message || '오류'}`)
     }
   }
 
@@ -298,11 +299,27 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
                   background: 'none', border: 'none', cursor: 'pointer',
                   color: 'var(--text1)', fontSize: 13, textAlign: 'left',
                 }}>✏️ 수정</button>
-                <button onClick={() => { setShowMenu(false); handleDelete() }} style={{
-                  display: 'block', width: '100%', padding: '10px 16px',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#ef4444', fontSize: 13, textAlign: 'left',
-                }}>🗑️ 삭제</button>
+                {confirmDelete ? (
+                  <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>정말 삭제할까요?</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); setConfirmDelete(false); handleDelete() }} style={{
+                        flex: 1, padding: '6px', background: '#ef4444', border: 'none',
+                        borderRadius: 6, cursor: 'pointer', color: '#fff', fontSize: 12, fontWeight: 600,
+                      }}>삭제</button>
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false) }} style={{
+                        flex: 1, padding: '6px', background: 'var(--surface2)', border: '1px solid var(--border2)',
+                        borderRadius: 6, cursor: 'pointer', color: 'var(--text2)', fontSize: 12,
+                      }}>취소</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true) }} style={{
+                    display: 'block', width: '100%', padding: '10px 16px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: '#ef4444', fontSize: 13, textAlign: 'left',
+                  }}>🗑️ 삭제</button>
+                )}
               </div>
             )}
           </div>
