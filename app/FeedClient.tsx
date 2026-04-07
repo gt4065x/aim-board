@@ -83,7 +83,22 @@ function FeedInner({ user }: Props) {
 
   const [showModal, setShowModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return localStorage.getItem('theme') !== 'light'
+  })
   const openingModalRef = useRef(false)
+
+  useEffect(() => {
+    const html = document.documentElement
+    if (isDark) {
+      html.classList.remove('light')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      html.classList.add('light')
+      localStorage.setItem('theme', 'light')
+    }
+  }, [isDark])
 
   const [uiLang, setUiLang] = useState<Language>('ko')
   const [loading, setLoading] = useState(true)
@@ -269,6 +284,18 @@ function FeedInner({ user }: Props) {
           ))}
         </div>
         <div className="topbar-actions">
+          <button
+            onClick={() => setIsDark(d => !d)}
+            title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
+            style={{
+              background: 'var(--surface2)', border: '1px solid var(--border2)',
+              borderRadius: 8, width: 34, height: 34, cursor: 'pointer',
+              fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--text2)', flexShrink: 0,
+            }}
+          >
+            {isDark ? '☀️' : '🌙'}
+          </button>
           <NotificationBell
             userId={user.uid}
             userPosts={posts.filter(p => p.user_id === user.uid).map(p => ({ id: p.id, title: p.title }))}
