@@ -4,15 +4,7 @@ import { useState } from 'react'
 import { doc, updateDoc } from 'firebase/firestore'
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth'
 import { db, auth } from '@/lib/firebase/client'
-
-interface Profile {
-  id: string
-  username: string
-  flag: string
-  language: string
-  avatar_letter: string
-  role: string
-}
+import type { Profile, Language } from '@/lib/types'
 
 interface Props {
   profile: Profile
@@ -29,7 +21,7 @@ const FLAGS = [
   { emoji: '🌍', label: '기타' },
 ]
 
-function flagToLang(flag: string) {
+function flagToLang(flag: string): Language {
   if (flag === '🇺🇸') return 'en'
   if (flag === '🇨🇳') return 'zh'
   return 'ko'
