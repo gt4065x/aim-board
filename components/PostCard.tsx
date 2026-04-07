@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Post, Category } from '@/lib/types'
 import { useToast } from './Toast'
 import PostDetailModal from './PostDetailModal'
-import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase/client'
 
 const CATEGORY_INFO: Record<Category, { label: string; cls: string }> = {
@@ -65,6 +65,49 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
   const [liked, setLiked] = useState(post.user_liked ?? false)
   const [likes, setLikes] = useState(post.likes?.[0]?.count ?? 0)
   const [showDetail, setShowDetail] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(post.title)
+  const [editBody, setEditBody] = useState(post.body)
+  const [deleted, setDeleted] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const isOwner = userId === post.user_id
+
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
+
+  async function handleDelete() {
+    if (!confirm('정말 삭제하시겠습니까?')) return
+    try {
+      await deleteDoc(doc(db, 'posts', post.id))
+      setDeleted(true)
+      showToast('✅', '게시글이 삭제되었습니다.')
+    } catch {
+      showToast('❌', '삭제 중 오류가 발생했습니다.')
+    }
+  }
+
+  async function handleEditSave() {
+    if (!editTitle.trim()) { showToast('❌', '제목을 입력해주세요.'); return }
+    try {
+      await updateDoc(doc(db, 'posts', post.id), {
+        title: editTitle.trim(),
+        body: editBody.trim(),
+      })
+      setEditing(false)
+      showToast('✅', '수정되었습니다.')
+    } catch {
+      showToast('❌', '수정 중 오류가 발생했습니다.')
+    }
+  }
+
+  if (deleted) return null
 
   const [translated, setTranslated] = useState<{ title: string; body: string } | null>(null)
   const [translating, setTranslating] = useState(false)
@@ -237,16 +280,70 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
           <div className="post-time">{timeAgo(post.created_at)}</div>
         </div>
         <span className={`post-category ${catInfo.cls}`}>{catInfo.label}</span>
+        {isOwner && (
+          <div ref={menuRef} style={{ position: 'relative', marginLeft: 'auto' }}>
+            <button onClick={() => setShowMenu(m => !m)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text3)', fontSize: 18, padding: '0 4px', lineHeight: 1,
+            }}>⋯</button>
+            {showMenu && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, zIndex: 50,
+                background: 'var(--surface)', border: '1px solid var(--border2)',
+                borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                overflow: 'hidden', minWidth: 110,
+              }}>
+                <button onClick={() => { setEditing(true); setShowMenu(false) }} style={{
+                  display: 'block', width: '100%', padding: '10px 16px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text1)', fontSize: 13, textAlign: 'left',
+                }}>✏️ 수정</button>
+                <button onClick={() => { setShowMenu(false); handleDelete() }} style={{
+                  display: 'block', width: '100%', padding: '10px 16px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#ef4444', fontSize: 13, textAlign: 'left',
+                }}>🗑️ 삭제</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="post-title post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
-        {showTranslated && translated ? translated.title : post.title}
-      </div>
-      <div className="post-body post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
-        {showTranslated && translated ? translated.body : post.body}
-      </div>
+      {editing ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '8px 0' }}>
+          <input
+            className="field-input"
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            placeholder="제목"
+            style={{ fontWeight: 600 }}
+          />
+          <textarea
+            className="field-input"
+            value={editBody}
+            onChange={e => setEditBody(e.target.value)}
+            placeholder="내용"
+            rows={4}
+            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-submit" onClick={handleEditSave} style={{ flex: 1, padding: '8px' }}>저장</button>
+            <button onClick={() => { setEditing(false); setEditTitle(post.title); setEditBody(post.body) }}
+              style={{ flex: 1, padding: '8px', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer', color: 'var(--text2)', fontSize: 13 }}>취소</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="post-title post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
+            {showTranslated && translated ? translated.title : editTitle || post.title}
+          </div>
+          <div className="post-body post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
+            {showTranslated && translated ? translated.body : editBody || post.body}
+          </div>
+        </>
+      )}
 
-      {showTranslated && translated && (
+      {!editing && showTranslated && translated && (
         <div className="translate-badge">🌐 AI 번역됨 (원문 언어: {post.language})</div>
       )}
 
