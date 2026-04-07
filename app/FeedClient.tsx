@@ -11,6 +11,7 @@ import PostCard from '@/components/PostCard'
 import WriteModal from '@/components/WriteModal'
 import RightPanel from '@/components/RightPanel'
 import ProfileSettingsModal from '@/components/ProfileSettingsModal'
+import NotificationBell from '@/components/NotificationBell'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_META = [
@@ -268,7 +269,10 @@ function FeedInner({ user }: Props) {
           ))}
         </div>
         <div className="topbar-actions">
-          <div className="notif-btn">🔔<div className="notif-dot" /></div>
+          <NotificationBell
+            userId={user.uid}
+            userPosts={posts.filter(p => p.user_id === user.uid).map(p => ({ id: p.id, title: p.title }))}
+          />
           <div className="avatar-btn" title="프로필 설정" onClick={() => setShowProfileModal(true)} style={{ cursor: 'pointer' }}>
             {avatarLetter}
           </div>
