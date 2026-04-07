@@ -213,14 +213,19 @@ function FeedInner({ user }: Props) {
     }
     setOnline()
 
+    // 로그인한 본인은 항상 online 목록에 포함
+    const selfUser: OnlineUser = {
+      user_id: user.uid,
+      username: profile.username || 'Guest',
+      flag: profile.flag || '🌍',
+      avatar_letter: profile.avatar_letter || 'U',
+    }
+
     const presenceRef = ref(rtdb, 'presence')
     const unsubPresence = onValue(presenceRef, (snapshot) => {
       const data = snapshot.val()
-      if (data) {
-        setOnlineUsers(Object.values(data) as OnlineUser[])
-      } else {
-        setOnlineUsers([])
-      }
+      const others: OnlineUser[] = data ? (Object.values(data) as OnlineUser[]).filter(u => u.user_id !== user.uid) : []
+      setOnlineUsers([selfUser, ...others])
     })
 
     return () => {
