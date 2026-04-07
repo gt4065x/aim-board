@@ -195,14 +195,18 @@ function FeedInner({ user }: Props) {
     const userRef = ref(rtdb, `presence/${user.uid}`)
 
     const setOnline = async () => {
-      await onDisconnect(userRef).remove()
-      await set(userRef, {
-        user_id: user.uid,
-        username: profile.username || 'Guest',
-        flag: profile.flag || '🌍',
-        avatar_letter: profile.avatar_letter || 'U',
-        onlineAt: Date.now()
-      })
+      try {
+        await onDisconnect(userRef).remove()
+        await set(userRef, {
+          user_id: user.uid,
+          username: profile.username || 'Guest',
+          flag: profile.flag || '🌍',
+          avatar_letter: profile.avatar_letter || 'U',
+          onlineAt: Date.now()
+        })
+      } catch (e) {
+        console.error('[presence] write failed:', e)
+      }
     }
     setOnline()
 
