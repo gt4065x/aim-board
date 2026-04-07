@@ -28,6 +28,7 @@ const NAV_META = [
 
 const UI = {
   ko: {
+    logoTitle: 'AI경영학과', logoSub: 'Woosong · Community',
     write: '✏️ 글쓰기', main: '메인', boards: '게시판', myInfo: '내 정보',
     signOut: '로그아웃', all: '전체', popular: '인기순', latest: '최신순',
     emptyLine1: '게시글이 없습니다.', emptyLine2: '첫 번째 글을 작성해보세요!',
@@ -35,6 +36,7 @@ const UI = {
     nav: ['전체 피드', '인기글', '공지사항', '자유게시판', '스터디 모집', 'Q&A', '취업·인턴', '자료 공유', '학과 이벤트'],
   },
   en: {
+    logoTitle: 'AI Management', logoSub: 'Woosong · Community',
     write: '✏️ Write', main: 'Main', boards: 'Boards', myInfo: 'My Info',
     signOut: 'Sign Out', all: 'All', popular: 'Popular', latest: 'Latest',
     emptyLine1: 'No posts yet.', emptyLine2: 'Be the first to write!',
@@ -42,6 +44,7 @@ const UI = {
     nav: ['All Feed', 'Popular', 'Notices', 'General', 'Study Group', 'Q&A', 'Jobs & Intern', 'Resources', 'Events'],
   },
   zh: {
+    logoTitle: 'AI经营学科', logoSub: '우송大学 · 社区',
     write: '✏️ 写帖子', main: '主', boards: '板块', myInfo: '我的信息',
     signOut: '退出', all: '全部', popular: '热门', latest: '最新',
     emptyLine1: '暂无帖子。', emptyLine2: '来写第一篇吧！',
@@ -274,7 +277,7 @@ function FeedInner({ user }: Props) {
       <header className="topbar">
         <div className="logo">
           <div className="logo-icon">🤖</div>
-          <div>AI경영학과<span className="logo-sub">Woosong · Community</span></div>
+          <div>{t.logoTitle}<span className="logo-sub">{t.logoSub}</span></div>
         </div>
         <div className="topbar-search">
           <span className="search-icon">🔍</span>
@@ -395,6 +398,7 @@ function FeedInner({ user }: Props) {
       {showProfileModal && profile && (
         <ProfileSettingsModal
           profile={profile}
+          uiLang={uiLang}
           onClose={() => setShowProfileModal(false)}
           onSaved={(updated) => { setProfile(updated); setShowProfileModal(false) }}
         />
