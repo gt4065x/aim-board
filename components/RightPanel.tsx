@@ -23,6 +23,11 @@ interface OnlineUser {
   avatar_letter: string
 }
 
+interface CountryCount {
+  flag: string
+  count: number
+}
+
 const LANG_FLAG: Record<string, string> = { ko: '🇰🇷', en: '🇺🇸', zh: '🇨🇳' }
 
 function avatarCls(flag: string) {
@@ -36,7 +41,7 @@ function useAnimCount(target: number) {
   const [val, setVal] = useState(0)
   useEffect(() => {
     let n = 0
-    const step = Math.ceil(target / 40)
+    const step = Math.ceil(target / 40) || 1
     const t = setInterval(() => {
       n = Math.min(n + step, target)
       setVal(n)
@@ -47,16 +52,23 @@ function useAnimCount(target: number) {
   return val
 }
 
-export default function RightPanel({ stats, hotPosts, onlineUsers }: { stats: Stats; hotPosts: HotPost[]; onlineUsers: OnlineUser[] }) {
+export default function RightPanel({
+  stats, hotPosts, onlineUsers, countryDist
+}: {
+  stats: Stats
+  hotPosts: HotPost[]
+  onlineUsers: OnlineUser[]
+  countryDist: CountryCount[]
+}) {
   const posts   = useAnimCount(stats.posts)
   const members = useAnimCount(stats.members)
   const today   = useAnimCount(stats.today)
-  const koPct   = useAnimCount(stats.langDist.ko)
-  const zhPct   = useAnimCount(stats.langDist.zh)
-  const enPct   = useAnimCount(stats.langDist.en)
+  const online  = useAnimCount(onlineUsers.length)
 
   const [barsVisible, setBarsVisible] = useState(false)
   useEffect(() => { const t = setTimeout(() => setBarsVisible(true), 400); return () => clearTimeout(t) }, [])
+
+  const maxCountry = countryDist[0]?.count || 1
 
   return (
     <aside className="right-panel">
@@ -78,44 +90,50 @@ export default function RightPanel({ stats, hotPosts, onlineUsers }: { stats: St
             <div className="stat-label">오늘 글</div>
           </div>
           <div className="stat-item">
-            <div className="stat-num">3</div>
-            <div className="stat-label">사용 언어</div>
+            <div className="stat-num">{online}</div>
+            <div className="stat-label">지금 접속</div>
           </div>
         </div>
       </div>
 
-      {/* 언어 분포 */}
+      {/* 국가별 사용자 통계 */}
       <div className="widget">
-        <div className="widget-title">🌏 언어 분포</div>
-        <div className="lang-row">
-          <span className="lang-name">🇰🇷 한국어</span>
-          <div className="lang-track">
-            <div className="lang-fill" style={{ width: barsVisible ? `${stats.langDist.ko}%` : '0%', background: 'var(--ko)' }} />
-          </div>
-          <span className="lang-pct">{koPct}%</span>
-        </div>
-        <div className="lang-row">
-          <span className="lang-name">🇨🇳 中文</span>
-          <div className="lang-track">
-            <div className="lang-fill" style={{ width: barsVisible ? `${stats.langDist.zh}%` : '0%', background: 'var(--zh)' }} />
-          </div>
-          <span className="lang-pct">{zhPct}%</span>
-        </div>
-        <div className="lang-row">
-          <span className="lang-name">🇺🇸 English</span>
-          <div className="lang-track">
-            <div className="lang-fill" style={{ width: barsVisible ? `${stats.langDist.en}%` : '0%', background: 'var(--en)' }} />
-          </div>
-          <span className="lang-pct">{enPct}%</span>
-        </div>
-      </div>
-
-      {/* 접속 중 */}
-      <div className="widget">
-        <div className="widget-title">👥 지금 접속 중</div>
-        {onlineUsers.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text3)', padding: '4px 0 8px' }}>접속 중인 사용자가 없습니다.</div>
+        <div className="widget-title">🌏 국가별 사용자</div>
+        {countryDist.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--text3)', padding: '4px 0 8px' }}>데이터 없음</div>
         ) : (
+          countryDist.map(({ flag, count }) => (
+            <div key={flag} className="lang-row">
+              <span className="lang-name">{flag}</span>
+              <div className="lang-track">
+                <div
+                  className="lang-fill"
+                  style={{
+                    width: barsVisible ? `${Math.round((count / maxCountry) * 100)}%` : '0%',
+                    background: flag === '🇰🇷' ? 'var(--ko)' : flag === '🇺🇸' ? 'var(--en)' : flag === '🇨🇳' ? 'var(--zh)' : 'var(--accent)',
+                  }}
+                />
+              </div>
+              <span className="lang-pct">{count}명</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* 전체 사용자 현황 */}
+      <div className="widget">
+        <div className="widget-title">👥 사용자 현황</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--accent)' }}>{members}</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>전체 가입자</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#22c55e' }}>{online}</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>지금 온라인</div>
+          </div>
+        </div>
+        {onlineUsers.length > 0 && (
           <div className="user-stack">
             {onlineUsers.slice(0, 12).map((u) => {
               const cls = avatarCls(u.flag)
@@ -142,18 +160,21 @@ export default function RightPanel({ stats, hotPosts, onlineUsers }: { stats: St
         </div>
       </div>
 
-      {/* 인기글 */}
+      {/* 인기글 (좋아요 순) */}
       <div className="widget">
-        <div className="widget-title">🔥 이번 주 인기글</div>
+        <div className="widget-title">🔥 인기글 TOP 5</div>
         {hotPosts.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text3)', padding: '6px 0' }}>이번 주 게시글이 없습니다.</div>
+          <div style={{ fontSize: 12, color: 'var(--text3)', padding: '6px 0' }}>게시글이 없습니다.</div>
         ) : (
           hotPosts.map((item, i) => (
             <div key={item.id} className="hot-item">
               <div className={`hot-rank ${i < 2 ? 'top' : ''}`}>{i + 1}</div>
-              <div className="hot-title">
+              <div className="hot-title" style={{ flex: 1 }}>
                 {item.title}
                 <span style={{ marginLeft: 4 }}>{LANG_FLAG[item.language] ?? '🌐'}</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap', marginLeft: 6 }}>
+                ❤️ {item.likes}
               </div>
             </div>
           ))

@@ -57,6 +57,7 @@ function flagToLang(flag: string): Language {
 
 interface LangDist { ko: number; en: number; zh: number }
 interface HotPost { id: string; title: string; language: string; likes: number }
+interface CountryCount { flag: string; count: number }
 export interface OnlineUser {
   user_id: string; username: string; flag: string; avatar_letter: string;
 }
@@ -71,6 +72,7 @@ function FeedInner({ user }: Props) {
   const [posts, setPosts] = useState<Post[]>([])
   const [liveStats, setLiveStats] = useState({ posts: 0, members: 0, today: 0, langDist: { ko: 33, en: 33, zh: 34 } })
   const [hotPosts, setHotPosts] = useState<HotPost[]>([])
+  const [countryDist, setCountryDist] = useState<CountryCount[]>([])
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
 
   const [search, setSearch] = useState('')
@@ -137,22 +139,38 @@ function FeedInner({ user }: Props) {
 
     const unsubProfiles = onSnapshot(collection(db, 'profiles'), (snapshot) => {
       const members = snapshot.size
-      let ko=0, en=0, zh=0
+      const flagMap: Record<string, number> = {}
       snapshot.forEach(d => {
-        const l = d.data().language
-        if (l==='ko') ko++; else if(l==='en') en++; else if(l==='zh') zh++;
+        const f = d.data().flag || '🌍'
+        flagMap[f] = (flagMap[f] || 0) + 1
       })
-      const total = ko+en+zh || 1
-      setLiveStats(prev => ({
-        ...prev,
-        members,
-        langDist: { ko: Math.round(ko/total*100), en: Math.round(en/total*100), zh: Math.round(zh/total*100)}
-      }))
+      const sorted = Object.entries(flagMap)
+        .map(([flag, count]) => ({ flag, count }))
+        .sort((a, b) => b.count - a.count)
+      setCountryDist(sorted)
+      setLiveStats(prev => ({ ...prev, members }))
+    })
+
+    const unsubLikes = onSnapshot(collection(db, 'likes'), (likesSnap) => {
+      const likesMap: Record<string, number> = {}
+      likesSnap.forEach(d => {
+        const pid = d.data().post_id
+        if (pid) likesMap[pid] = (likesMap[pid] || 0) + 1
+      })
+      setPosts(prev => {
+        const top = [...prev]
+          .map(p => ({ ...p, _likes: likesMap[p.id] || 0 }))
+          .sort((a, b) => b._likes - a._likes)
+          .slice(0, 5)
+          .map(p => ({ id: p.id, title: p.title, language: p.language, likes: p._likes }))
+        setHotPosts(top)
+        return prev
+      })
     })
 
     setLoading(false)
 
-    return () => { unsubPosts(); unsubProfiles(); }
+    return () => { unsubPosts(); unsubProfiles(); unsubLikes() }
   }, [])
 
   // 3. 실시간 접속자 (Firebase Realtime Database)
@@ -332,7 +350,7 @@ function FeedInner({ user }: Props) {
         </div>
       </main>
 
-      <RightPanel stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} />
+      <RightPanel stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} countryDist={countryDist} />
 
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
         ✏️
