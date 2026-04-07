@@ -10,6 +10,7 @@ import { Post, Profile, Category, Language } from '@/lib/types'
 import PostCard from '@/components/PostCard'
 import WriteModal from '@/components/WriteModal'
 import RightPanel from '@/components/RightPanel'
+import ProfileSettingsModal from '@/components/ProfileSettingsModal'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_META = [
@@ -78,6 +79,7 @@ function FeedInner({ user }: Props) {
   const [langFilter, setLangFilter] = useState({ ko: true, en: true, zh: true })
 
   const [showModal, setShowModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
   const openingModalRef = useRef(false)
 
   const [uiLang, setUiLang] = useState<Language>('ko')
@@ -249,7 +251,7 @@ function FeedInner({ user }: Props) {
         </div>
         <div className="topbar-actions">
           <div className="notif-btn">🔔<div className="notif-dot" /></div>
-          <div className="avatar-btn" title={profile?.username ?? user.email ?? ''} onClick={signOut} style={{ cursor: 'pointer' }}>
+          <div className="avatar-btn" title="프로필 설정" onClick={() => setShowProfileModal(true)} style={{ cursor: 'pointer' }}>
             {avatarLetter}
           </div>
         </div>
@@ -337,6 +339,13 @@ function FeedInner({ user }: Props) {
       </button>
 
       {showModal && <WriteModal userId={user.uid} uiLang={uiLang} onClose={closeModal} onPosted={() => {}} />}
+      {showProfileModal && profile && (
+        <ProfileSettingsModal
+          profile={profile}
+          onClose={() => setShowProfileModal(false)}
+          onSaved={(updated) => { setProfile(updated); setShowProfileModal(false) }}
+        />
+      )}
     </div>
   )
 }
