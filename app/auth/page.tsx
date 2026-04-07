@@ -1,13 +1,14 @@
 'use client'
-
+export const dynamic = 'force-dynamic';
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { auth, db } from '@/lib/firebase/client'
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { doc, setDoc } from 'firebase/firestore'
 import type { FormEvent } from 'react'
 
 export default function AuthPage() {
   const router = useRouter()
-  const supabase = createClient()
 
   const [tab, setTab] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
@@ -18,13 +19,17 @@ export default function AuthPage() {
   const [error, setError] = useState('')
 
   const flags = [
-    { emoji: '🇰🇷', label: '한국' },
-    { emoji: '🇨🇳', label: '中国' },
-    { emoji: '🇺🇸', label: 'USA' },
-    { emoji: '🇻🇳', label: 'Vietnam' },
-    { emoji: '🇯🇵', label: '日本' },
-    { emoji: '🌍', label: '기타' },
+    { emoji: '🇰🇷', label: '한국', lang: 'ko' },
+    { emoji: '🇨🇳', label: '中国', lang: 'zh' },
+    { emoji: '🇺🇸', label: 'USA', lang: 'en' },
+    { emoji: '🇻🇳', label: 'Vietnam', lang: 'en' },
+    { emoji: '🇯🇵', label: '日本', lang: 'en' },
+    { emoji: '🌍', label: '기타', lang: 'ko' },
   ]
+
+  function flagToLang(f: string) {
+    return flags.find((x) => x.emoji === f)?.lang ?? 'ko'
+  }
 
   // 🔥 로그인
   async function handleLogin(e: FormEvent) {
@@ -32,59 +37,16 @@ export default function AuthPage() {
     setLoading(true)
     setError('')
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    console.log('login data:', data)
-    console.error('login error:', error)
-
-    if (error) {
-      setError(error.message)
+    try {
+      await signInWithEmailAndPassword(auth, email, password)
+      router.replace('/')
+      router.refresh()
+    } catch (err: any) {
+      console.error('login error:', err)
+      setError(err.message || '로그인에 실패했습니다.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-      return
-    }
-
-    if (data.user) {
-      const profileRow = {
-        id: data.user.id,
-        username: username.trim(),
-        flag,
-        role: 'student',
-        avatar_letter: username.trim()[0]?.toUpperCase() ?? 'U',
-      }
-
-      const { error: profileInsertError } = await (supabase as any)
-        .from('profiles')
-        .upsert([profileRow])
-
-      if (profileInsertError) {
-        console.error('profile upsert error:', profileInsertError)
-      }
-    }
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    console.log('client session after login:', session)
-
-    if (!session) {
-      setError('로그인은 되었지만 세션을 확인하지 못했습니다.')
-      setLoading(false)
-      return
-    }
-
-    router.replace('/')
-    router.refresh()
-    setLoading(false)
   }
 
   // 🔥 회원가입
@@ -99,40 +61,29 @@ export default function AuthPage() {
     setLoading(true)
     setError('')
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          username: username.trim(),
-          flag,
-          avatar_letter: username.trim()[0].toUpperCase(),
-        },
-      },
-    })
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      const user = userCredential.user
 
-    console.log('signup data:', data)
-    console.error('signup error:', error)
+      // Firestore의 profiles 컬렉션에 유저 메타데이터 저장
+      await setDoc(doc(db, 'profiles', user.uid), {
+        id: user.uid,
+        username: username.trim(),
+        flag,
+        language: flagToLang(flag),
+        avatar_letter: username.trim()[0].toUpperCase(),
+        role: 'student',
+        created_at: new Date().toISOString()
+      })
 
-    if (error) {
-      setError(error.message)
+      router.replace('/')
+      router.refresh()
+    } catch (err: any) {
+      console.error('signup error:', err)
+      setError(err.message || '회원가입에 실패했습니다.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    // 🔥 이메일 인증 여부 대응
-    if (!data.session) {
-      setError('이메일 인증 후 로그인해주세요')
-      setLoading(false)
-      return
-    }
-
-    await new Promise((res) => setTimeout(res, 200))
-
-    router.replace('/')
-    router.refresh()
-
-    setLoading(false)
   }
 
   return (

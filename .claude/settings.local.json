@@ -1,9 +1,13 @@
 {
   "permissions": {
     "allow": [
+      "Bash(vercel env:*)",
       "Bash(xargs grep:*)",
       "Bash(npm show:*)",
-      "Bash(npm search:*)"
+      "Bash(npm search:*)",
+      "Bash(vercel logs:*)",
+      "Bash(vercel:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
