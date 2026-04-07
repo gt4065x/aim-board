@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, signOut as firebaseSignOut } from 'firebase/auth'
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where, setDoc } from 'firebase/firestore'
 import { ref, onValue, set, onDisconnect, remove } from 'firebase/database'
 import { auth, db, rtdb } from '@/lib/firebase/client'
 import { Post, Profile, Category, Language } from '@/lib/types'
@@ -85,7 +85,7 @@ function FeedInner({ user }: Props) {
 
   // 1. 프로필 패치 및 언어 설정
   useEffect(() => {
-    getDoc(doc(db, 'profiles', user.uid)).then((snap) => {
+    getDoc(doc(db, 'profiles', user.uid)).then(async (snap) => {
       if (snap.exists()) {
         const data = snap.data() as Profile
         setProfile(data)
@@ -93,9 +93,22 @@ function FeedInner({ user }: Props) {
           setUiLang(data.language as Language)
         }
       } else {
-        // Fallback
+        // 프로필 없으면 이메일 기반으로 자동 생성
         const nav = typeof navigator !== 'undefined' ? navigator.language : 'ko'
-        setUiLang(nav.startsWith('zh') ? 'zh' : nav.startsWith('en') ? 'en' : 'ko')
+        const lang = nav.startsWith('zh') ? 'zh' : nav.startsWith('en') ? 'en' : 'ko'
+        const defaultUsername = user.email?.split('@')[0] ?? 'User'
+        const newProfile: Profile = {
+          id: user.uid,
+          username: defaultUsername,
+          flag: lang === 'zh' ? '🇨🇳' : lang === 'en' ? '🇺🇸' : '🇰🇷',
+          language: lang,
+          avatar_letter: defaultUsername[0].toUpperCase(),
+          role: 'student',
+          created_at: new Date().toISOString()
+        }
+        await setDoc(doc(db, 'profiles', user.uid), newProfile)
+        setProfile(newProfile)
+        setUiLang(lang as Language)
       }
     })
   }, [user.uid])
