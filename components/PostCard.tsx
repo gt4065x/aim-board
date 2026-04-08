@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Post, Category } from '@/lib/types'
 import { useToast } from './Toast'
 import PostDetailModal from './PostDetailModal'
-import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore'
+import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/client'
 
 const CATEGORY_INFO: Record<Category, { label: string; cls: string }> = {
@@ -126,18 +126,29 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
 
   // Firebase: Fetch real likes count and user_liked state on load since it's missing in initial load sometimes
   useEffect(() => {
-    async function loadLikes() {
-      const q = query(collection(db, 'likes'), where('post_id', '==', post.id))
-      const snap = await getDocs(q)
+    if (!post.id) return
+    console.log(`[NUCLEAR-DEBUG] PostCard ID: "${post.id}" (Ref: ${post.title.substring(0, 10)}...)`)
+    
+    // 1. Real-time Likes
+    const qLikes = query(collection(db, 'likes'), where('post_id', '==', post.id))
+    const unsubLikes = onSnapshot(qLikes, (snap) => {
       setLikes(snap.size)
-      if (userId) setLiked(snap.docs.some(d => d.data().user_id === userId))
-      
-      // Load comment count
-      const cQ = query(collection(db, 'comments'), where('post_id', '==', post.id))
-      const cSnap = await getDocs(cQ)
-      setCommentCount(cSnap.size)
+      if (userId) {
+        const likedByMe = snap.docs.some(d => (d.data().user_id || d.data().userId) === userId)
+        setLiked(likedByMe)
+      }
+    })
+
+    // 2. Real-time Comment Count
+    const qCommentsCount = query(collection(db, 'comments'), where('post_id', '==', post.id))
+    const unsubCommentsCount = onSnapshot(qCommentsCount, (snap) => {
+      setCommentCount(snap.size)
+    })
+
+    return () => {
+      unsubLikes()
+      unsubCommentsCount()
     }
-    loadLikes()
   }, [post.id, userId])
 
   useEffect(() => {
@@ -145,30 +156,67 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
     setShowTranslated(false)
   }, [uiLang])
 
-  async function fetchComments() {
+  useEffect(() => {
+    if (!showComments || !post.id) return
+
     setLoadingComments(true)
-    try {
-      const q = query(collection(db, 'comments'), where('post_id', '==', post.id), orderBy('created_at', 'asc'))
-      const snap = await getDocs(q)
+    console.log(`[DEBUG] PostCard loading comments listener for: ${post.id}`)
+    
+    const q = query(collection(db, 'comments'), where('post_id', '==', post.id))
+    
+    const unsubscribe = onSnapshot(q, async (snap) => {
+      console.log(`[DEBUG] PostCard comments snapshot: ${snap.size}`)
       
-      const loaded: CommentRow[] = []
-      for (const d of snap.docs) {
-        const c = { id: d.id, ...d.data() } as any
-        try {
-          const profileSnap = await getDoc(doc(db, 'profiles', c.user_id))
-          c.profiles = profileSnap.exists() ? profileSnap.data() : null
-        } catch(e) { }
-        loaded.push(c as CommentRow)
+      if (snap.empty) {
+        setCommentList([])
+        setLoadingComments(false)
+        return
       }
+
+      const userIds = Array.from(new Set(snap.docs.map(d => d.data().user_id || d.data().userId).filter(Boolean))) as string[]
+      const profileMap: Record<string, any> = {}
+
+      if (userIds.length > 0) {
+        try {
+          for (let i = 0; i < userIds.length; i += 30) {
+            const chunk = userIds.slice(i, i + 30)
+            const pSnap = await getDocs(query(collection(db, 'profiles'), where('id', 'in', chunk)))
+            pSnap.forEach(d => { profileMap[d.id] = d.data() })
+          }
+        } catch (e) {
+          console.error('[DEBUG] PostCard profile fetch error:', e)
+        }
+      }
+
+      const loaded = snap.docs.map(d => {
+        const data = d.data()
+        const uid = data.user_id || data.userId
+        return {
+          id: d.id,
+          ...data,
+          profiles: profileMap[uid] || null
+        } as CommentRow
+      })
+
+      loaded.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+        return timeA - timeB
+      })
+
       setCommentList(loaded)
-      setCommentCount(loaded.length)
-    } catch (err) {
-      console.error('fetch comments exception:', err)
-      showToast('❌', '댓글을 불러오지 못했습니다.')
-    } finally {
       setLoadingComments(false)
-    }
-  }
+    }, (err) => {
+      console.error('[DEBUG] PostCard onSnapshot failed:', err)
+      showToast('❌', '댓글 로딩 중 오류가 발생했습니다.')
+      setLoadingComments(false)
+    })
+
+    return () => unsubscribe()
+  }, [showComments, post.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stub for compatibility with existing toggle logic
+  async function fetchComments() {}
 
   async function toggleComments() {
     const next = !showComments

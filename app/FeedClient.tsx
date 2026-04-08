@@ -142,7 +142,7 @@ function FeedInner({ user }: Props) {
   useEffect(() => {
     const q = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50))
     const unsubPosts = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Post))
+      const docs = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Post))
       setPosts(docs)
 
       const todayStart = new Date()
