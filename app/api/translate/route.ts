@@ -2,10 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY
+    const rawApiKey = process.env.OPENAI_API_KEY
+    const apiKey = rawApiKey?.trim()
+
+    console.log('[translate] env check:', {
+      hasKey: !!apiKey,
+      keyPrefix: apiKey ? `${apiKey.slice(0, 7)}...` : null,
+      nodeEnv: process.env.NODE_ENV,
+    })
+
     if (!apiKey) {
       console.error('[translate] OPENAI_API_KEY not set')
-      return NextResponse.json({ error: 'OPENAI_API_KEY가 설정되지 않았습니다.' }, { status: 500 })
+      return NextResponse.json(
+        { error: 'OPENAI_API_KEY가 설정되지 않았습니다.' },
+        { status: 500 }
+      )
     }
 
     const { title, body, targetLang = 'ko' } = await request.json()
@@ -45,14 +56,26 @@ export async function POST(request: NextRequest) {
       const err = await response.text()
       console.error('[translate] OpenAI API error:', response.status, err)
       let detail = ''
-      try { detail = JSON.parse(err)?.error?.message ?? '' } catch {}
+      try {
+        detail = JSON.parse(err)?.error?.message ?? ''
+      } catch {}
       return NextResponse.json(
         { error: `번역 요청 실패 (${response.status})${detail ? ': ' + detail : ''}` },
         { status: 502 }
       )
     }
 
-    const data = await response.json()
+    let data
+    try {
+      data = await response.json()
+    } catch (parseError) {
+      console.error('[translate] Failed to parse OpenAI response JSON:', parseError)
+      return NextResponse.json(
+        { error: 'OpenAI 응답 JSON 파싱 실패' },
+        { status: 500 }
+      )
+    }
+
     const content = data.choices?.[0]?.message?.content
 
     if (!content) {
@@ -60,7 +83,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '번역 응답이 비어있습니다.' }, { status: 500 })
     }
 
-    const parsed = JSON.parse(content)
+    let parsed
+    try {
+      parsed = JSON.parse(content)
+    } catch (parseError) {
+      console.error('[translate] Failed to parse translation content:', parseError)
+      console.error('[translate] Raw content:', content)
+      return NextResponse.json(
+        { error: '번역 결과 JSON 파싱 실패' },
+        { status: 500 }
+      )
+    }
+
     return NextResponse.json({
       title: parsed.title ?? title,
       body: parsed.body ?? body,
