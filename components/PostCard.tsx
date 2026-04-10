@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Post, Category } from '@/lib/types'
-import { createClient } from '@/lib/supabase/client'
 import { useToast } from './Toast'
+import PostDetailModal from './PostDetailModal'
+import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase/client'
 
 const CATEGORY_INFO: Record<Category, { label: string; cls: string }> = {
   free: { label: '자유', cls: 'cat-free' },
@@ -22,7 +24,26 @@ function avatarClass(flag: string) {
   return ''
 }
 
+// URL을 하이퍼링크로 변환하여 React 노드 배열로 반환
+function renderWithLinks(text: string): React.ReactNode[] {
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g
+  const parts = text.split(urlRegex)
+  return parts.map((part, i) =>
+    urlRegex.test(part) ? (
+      <a key={i} href={part} target="_blank" rel="noopener noreferrer"
+        style={{ color: 'var(--accent)', textDecoration: 'underline', wordBreak: 'break-all' }}
+        onClick={(e) => e.stopPropagation()}
+      >{part}</a>
+    ) : part
+  )
+}
+
+function isImageUrl(url: string): boolean {
+  return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url)
+}
+
 function timeAgo(dateStr: string) {
+  if (!dateStr) return ''
   const diff = Date.now() - new Date(dateStr).getTime()
   const m = Math.floor(diff / 60000)
   if (m < 1) return '방금 전'
@@ -32,118 +53,203 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(h / 24)}일 전`
 }
 
+const COMMENT_MAX = 500
+
+interface CommentRow {
+  id: string
+  body: string
+  created_at: string
+  user_id: string
+  profiles?: { username: string; flag: string; avatar_letter: string } | null
+}
+
+interface CurrentUserProfile {
+  username: string
+  flag: string
+  avatar_letter: string
+}
+
 interface Props {
   post: Post & { user_liked?: boolean }
   userId: string | null
+  uiLang?: 'ko' | 'en' | 'zh'
+  currentUserProfile?: CurrentUserProfile | null
   animDelay?: number
 }
 
-export default function PostCard({ post, userId, animDelay = 0 }: Props) {
-  const supabase = createClient()
+export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfile, animDelay = 0 }: Props) {
   const { showToast } = useToast()
 
-  const likeCount = post.likes?.[0]?.count ?? 0
-  const commentCount = post.comments?.[0]?.count ?? 0
-
   const [liked, setLiked] = useState(post.user_liked ?? false)
-  const [likes, setLikes] = useState(likeCount)
+  const [likes, setLikes] = useState(post.likes?.[0]?.count ?? 0)
+  const [showDetail, setShowDetail] = useState(false)
 
   const [translated, setTranslated] = useState<{ title: string; body: string } | null>(null)
   const [translating, setTranslating] = useState(false)
   const [showTranslated, setShowTranslated] = useState(false)
 
-  async function handleTranslate() {
-    if (translated) {
-      setShowTranslated((v) => !v)
-      return
+  const [showComments, setShowComments] = useState(false)
+  const [commentList, setCommentList] = useState<CommentRow[]>([])
+  // For initial display if comments length was fetched, else 0
+  const [commentCount, setCommentCount] = useState(post.comments?.[0]?.count ?? 0)
+  const [commentBody, setCommentBody] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [loadingComments, setLoadingComments] = useState(false)
+
+  const submittingRef = useRef(false)
+
+  // Firebase: Fetch real likes count and user_liked state on load since it's missing in initial load sometimes
+  useEffect(() => {
+    async function loadLikes() {
+      const q = query(collection(db, 'likes'), where('post_id', '==', post.id))
+      const snap = await getDocs(q)
+      setLikes(snap.size)
+      if (userId) setLiked(snap.docs.some(d => d.data().user_id === userId))
+      
+      // Load comment count
+      const cQ = query(collection(db, 'comments'), where('post_id', '==', post.id))
+      const cSnap = await getDocs(cQ)
+      setCommentCount(cSnap.size)
     }
+    loadLikes()
+  }, [post.id, userId])
+
+  useEffect(() => {
+    setTranslated(null)
+    setShowTranslated(false)
+  }, [uiLang])
+
+  async function fetchComments() {
+    setLoadingComments(true)
+    try {
+      const q = query(collection(db, 'comments'), where('post_id', '==', post.id), orderBy('created_at', 'asc'))
+      const snap = await getDocs(q)
+      
+      const loaded: CommentRow[] = []
+      for (const d of snap.docs) {
+        const c = { id: d.id, ...d.data() } as any
+        try {
+          const profileSnap = await getDoc(doc(db, 'profiles', c.user_id))
+          c.profiles = profileSnap.exists() ? profileSnap.data() : null
+        } catch(e) { }
+        loaded.push(c as CommentRow)
+      }
+      setCommentList(loaded)
+      setCommentCount(loaded.length)
+    } catch (err) {
+      console.error('fetch comments exception:', err)
+      showToast('❌', '댓글을 불러오지 못했습니다.')
+    } finally {
+      setLoadingComments(false)
+    }
+  }
+
+  async function toggleComments() {
+    const next = !showComments
+    setShowComments(next)
+    if (next && commentList.length === 0) {
+      await fetchComments()
+    }
+  }
+
+  async function handleCommentSubmit() {
+    if (submittingRef.current) return
+    if (!userId) { showToast('⚠️', '로그인이 필요합니다'); return }
+    const body = commentBody.trim()
+    if (!body) return
+    if (body.length > COMMENT_MAX) { showToast('⚠️', `댓글이 너무 깁니다. 최대 ${COMMENT_MAX}자까지만 입력 가능합니다.`); return }
+
+    submittingRef.current = true
+
+    const optimisticId = `optimistic-${Date.now()}`
+    const optimisticComment: CommentRow = {
+      id: optimisticId, body, created_at: new Date().toISOString(), user_id: userId, profiles: currentUserProfile ?? null,
+    }
+    setCommentList((prev) => [...prev, optimisticComment])
+    setCommentCount((c) => c + 1)
+    setCommentBody('')
+    setSubmitting(true)
+
+    try {
+      await addDoc(collection(db, 'comments'), { post_id: post.id, user_id: userId, body, created_at: new Date().toISOString() })
+      await fetchComments()
+    } catch (err) {
+      console.error('insert comment exception:', err)
+      setCommentList((prev) => prev.filter((c) => c.id !== optimisticId))
+      setCommentCount((c) => c - 1)
+      setCommentBody(body)
+      showToast('❌', '댓글 등록 중 오류가 발생했습니다.')
+    } finally {
+      setSubmitting(false)
+      submittingRef.current = false
+    }
+  }
+
+  async function handleTranslate() {
+    if (translated) { setShowTranslated((v) => !v); return }
     setTranslating(true)
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: post.title, body: post.body, targetLang: 'ko' }),
+        body: JSON.stringify({ title: post.title, body: post.body, targetLang: uiLang }),
       })
       const data = await res.json()
-      if (data.error) {
-        showToast('❌', data.error)
-      } else {
-        setTranslated(data)
-        setShowTranslated(true)
+      if (data.error) showToast('❌', data.error)
+      else { setTranslated(data); setShowTranslated(true) }
+    } catch { showToast('❌', '번역 중 오류가 발생했습니다.') } 
+    finally { setTranslating(false) }
+  }
+
+  async function toggleLike() {
+    if (!userId) { showToast('⚠️', '로그인이 필요합니다'); return }
+    
+    const likeRef = doc(db, 'likes', `${post.id}_${userId}`)
+    if (liked) {
+      setLiked(false); setLikes((l) => l - 1)
+      try {
+        await deleteDoc(likeRef)
+      } catch (err) {
+        setLiked(true); setLikes((l) => l + 1)
+        showToast('❌', '좋아요 취소 중 오류가 발생했습니다.')
       }
-    } catch {
-      showToast('❌', '번역 중 오류가 발생했습니다.')
-    } finally {
-      setTranslating(false)
+    } else {
+      setLiked(true); setLikes((l) => l + 1)
+      try {
+        await setDoc(likeRef, { post_id: post.id, user_id: userId, created_at: new Date().toISOString() })
+      } catch (err) {
+        setLiked(false); setLikes((l) => l - 1)
+        showToast('❌', '좋아요 중 오류가 발생했습니다.')
+      }
     }
   }
 
-  const profile = post.profiles
+  // feed의 post.profiles가 없다면, 직접 채워주기 위해 (하지만 feedClient가 이미 profiles 조인 안되어있음)
+  const [profile, setProfile] = useState<{username: string; flag: string; avatar_letter: string; role: string} | null>(post.profiles || null)
+  
+  useEffect(() => {
+    if (!profile && post.user_id) {
+      getDoc(doc(db, 'profiles', post.user_id)).then(snap => {
+        if(snap.exists()) setProfile(snap.data() as any)
+      })
+    }
+  }, [post.user_id, profile])
+
   const avCls = profile ? avatarClass(profile.flag) : 'av-ko'
   const catInfo = CATEGORY_INFO[post.category] ?? { label: post.category, cls: 'cat-free' }
 
-  async function toggleLike() {
-    if (!userId) {
-      showToast('⚠️', '로그인이 필요합니다')
-      return
-    }
-
-    if (liked) {
-      setLiked(false)
-      setLikes((l) => l - 1)
-
-      const { error } = await (supabase as any)
-        .from('likes')
-        .delete()
-        .eq('post_id', post.id)
-        .eq('user_id', userId)
-
-      if (error) {
-        console.error('delete like error:', error)
-        setLiked(true)
-        setLikes((l) => l + 1)
-        showToast('❌', error.message)
-      }
-    } else {
-      setLiked(true)
-      setLikes((l) => l + 1)
-
-      const insertRow = {
-        post_id: post.id,
-        user_id: userId,
-      }
-
-      const { error } = await (supabase as any)
-        .from('likes')
-        .insert([insertRow])
-
-      if (error) {
-        console.error('insert like error:', error)
-        setLiked(false)
-        setLikes((l) => l - 1)
-        showToast('❌', error.message)
-      }
-    }
-  }
-
   return (
-    <div
-      className={`post-card ${post.pinned ? 'pinned' : ''}`}
-      style={{ animationDelay: `${animDelay}s` }}
-    >
+    <div className={`post-card ${post.pinned ? 'pinned' : ''}`} style={{ animationDelay: `${animDelay}s` }}>
       {post.pinned && <div className="pin-badge">📌 공지</div>}
 
       <div className="post-meta">
-        <div
-          className={`post-avatar ${avCls}`}
-          style={!avCls ? { background: 'linear-gradient(135deg,#f77f00,#d62828)' } : {}}
-        >
+        <div className={`post-avatar ${avCls}`} style={!avCls ? { background: 'linear-gradient(135deg,#f77f00,#d62828)' } : {}}>
           {profile?.avatar_letter ?? '?'}
         </div>
         <div className="post-info">
           <div className="post-author">
             {profile?.username ?? '알 수 없음'}
-            <span style={{ fontSize: 13 }}>{profile?.flag}</span>
+            <span style={{ fontSize: 13, marginLeft: 4 }}>{profile?.flag}</span>
             {profile?.role === 'professor' && <span className="post-role">PROF</span>}
           </div>
           <div className="post-time">{timeAgo(post.created_at)}</div>
@@ -151,34 +257,89 @@ export default function PostCard({ post, userId, animDelay = 0 }: Props) {
         <span className={`post-category ${catInfo.cls}`}>{catInfo.label}</span>
       </div>
 
-      <div className="post-title">
+      <div className="post-title post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
         {showTranslated && translated ? translated.title : post.title}
       </div>
-      <div className="post-body">
-        {showTranslated && translated ? translated.body : post.body}
+      <div className="post-body post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer', whiteSpace: 'pre-wrap' }}>
+        {renderWithLinks(showTranslated && translated ? translated.body : post.body)}
       </div>
+
+      {/* 이미지 썸네일 */}
+      {post.attachments && post.attachments.length > 0 && (
+        <div className="post-attachments">
+          {post.attachments.filter(isImageUrl).map((url, i) => (
+            <a key={i} href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+              <img src={url} alt={`첨부 이미지 ${i + 1}`} className="post-thumb" />
+            </a>
+          ))}
+          {post.attachments.filter(u => !isImageUrl(u)).map((url, i) => (
+            <a key={`f-${i}`} href={url} target="_blank" rel="noopener noreferrer"
+              className="post-file-link" onClick={(e) => e.stopPropagation()}>
+              📎 {decodeURIComponent(url.split('/').pop()?.split('?')[0] ?? '파일')}
+            </a>
+          ))}
+        </div>
+      )}
 
       {showTranslated && translated && (
         <div className="translate-badge">🌐 AI 번역됨 (원문 언어: {post.language})</div>
       )}
 
       <div className="post-footer">
-        <button
-          className={`react-btn ${liked ? 'liked' : ''}`}
-          onClick={toggleLike}
-        >
-          👍 <span>{likes}</span>
-        </button>
-        <span className="comment-count">💬 {commentCount}</span>
-        <button
-          className={`react-btn translate-btn ${showTranslated ? 'active' : ''}`}
-          onClick={handleTranslate}
-          disabled={translating}
-          title="ChatGPT로 한국어 번역"
-        >
+        <button className={`react-btn ${liked ? 'liked' : ''}`} onClick={toggleLike}>👍 <span>{likes}</span></button>
+        <button className={`react-btn ${showComments ? 'active' : ''}`} onClick={toggleComments}>💬 <span>{commentCount}</span></button>
+        <button className={`react-btn translate-btn ${showTranslated ? 'active' : ''}`} onClick={handleTranslate} disabled={translating}
+          title={`ChatGPT로 ${uiLang === 'en' ? '영어' : uiLang === 'zh' ? '중국어' : '한국어'} 번역`}>
           {translating ? '⏳' : '🌐'} <span>{translating ? '번역 중...' : showTranslated ? '원문 보기' : 'AI 번역'}</span>
         </button>
       </div>
+
+      {showComments && (
+        <div className="comment-section">
+          {loadingComments ? (
+            <div className="comment-loading">댓글 로딩 중...</div>
+          ) : commentList.length === 0 ? (
+            <div className="comment-empty">첫 번째 댓글을 남겨보세요!</div>
+          ) : (
+            <div className="comment-list">
+              {commentList.map((c) => (
+                <div key={c.id} className="comment-item">
+                  <div className={`comment-avatar ${avatarClass(c.profiles?.flag ?? '')}`} style={!avatarClass(c.profiles?.flag ?? '') ? { background: 'linear-gradient(135deg,#f77f00,#d62828)' } : {}}>
+                    {c.profiles?.avatar_letter ?? '?'}
+                  </div>
+                  <div className="comment-content">
+                    <div className="comment-author">
+                      {c.profiles?.username ?? '알 수 없음'}
+                      <span className="comment-flag">{c.profiles?.flag}</span>
+                      <span className="comment-time">{timeAgo(c.created_at)}</span>
+                    </div>
+                    <div className="comment-body">{c.body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="comment-input-wrap">
+            <div className="comment-input-row">
+              <textarea className={`comment-textarea ${commentBody.length > COMMENT_MAX ? 'field-over' : ''}`} placeholder="댓글을 입력하세요..."
+                value={commentBody} onChange={(e) => setCommentBody(e.target.value)} rows={2} disabled={submitting}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleCommentSubmit() }} />
+              <button className="comment-submit" onClick={handleCommentSubmit} disabled={submitting || !commentBody.trim() || commentBody.length > COMMENT_MAX}>
+                {submitting ? '...' : '등록'}
+              </button>
+            </div>
+            <div className={`char-count ${commentBody.length > COMMENT_MAX ? 'over' : ''}`}>{commentBody.length} / {COMMENT_MAX}</div>
+          </div>
+        </div>
+      )}
+
+      {showDetail && (
+        <PostDetailModal
+          post={{ ...post, user_liked: liked, likes: [{ count: likes }], comments: [{ count: commentCount }], profiles: profile as any }}
+          userId={userId} currentUserProfile={currentUserProfile} uiLang={uiLang} onClose={() => setShowDetail(false)}
+        />
+      )}
     </div>
   )
 }

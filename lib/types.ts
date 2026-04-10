@@ -1,6 +1,6 @@
 export type Language = 'ko' | 'en' | 'zh'
 export type Category = 'free' | 'qa' | 'study' | 'career' | 'resource' | 'event' | 'notice'
-export type Role = 'student' | 'professor'
+export type Role = 'student' | 'professor' | 'staff' | 'admin'
 
 export interface Profile {
   id: string
@@ -21,6 +21,7 @@ export interface Post {
   language: Language
   pinned: boolean
   created_at: string
+  attachments?: string[]
   profiles?: Profile
   likes?: { count: number }[]
   comments?: { count: number }[]

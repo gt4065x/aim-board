@@ -1,73 +1,194 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { User } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/client'
-import { Post, Profile, Category } from '@/lib/types'
+import { User, signOut as firebaseSignOut } from 'firebase/auth'
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where } from 'firebase/firestore'
+import { ref, onValue, set, onDisconnect, remove } from 'firebase/database'
+import { auth, db, rtdb } from '@/lib/firebase/client'
+import { Post, Profile, Category, Language } from '@/lib/types'
 import PostCard from '@/components/PostCard'
 import WriteModal from '@/components/WriteModal'
 import RightPanel from '@/components/RightPanel'
 import { ToastProvider, useToast } from '@/components/Toast'
 
-const NAV_ITEMS = [
-  { icon: '🏠', label: '전체 피드', category: null, badge: null, badgeCls: '' },
-  { icon: '🔥', label: '인기글', category: 'hot', badge: null, badgeCls: '' },
-  { icon: '📢', label: '공지사항', category: 'notice', badge: null, badgeCls: '' },
-  { icon: '💬', label: '자유게시판', category: 'free', badge: null, badgeCls: '' },
-  { icon: '📚', label: '스터디 모집', category: 'study', badge: null, badgeCls: 'blue' },
-  { icon: '❓', label: 'Q&A', category: 'qa', badge: null, badgeCls: 'green' },
-  { icon: '💼', label: '취업·인턴', category: 'career', badge: null, badgeCls: '' },
-  { icon: '📎', label: '자료 공유', category: 'resource', badge: null, badgeCls: '' },
-  { icon: '🎉', label: '학과 이벤트', category: 'event', badge: null, badgeCls: '' },
+const NAV_META = [
+  { icon: '🏠', category: null,     badge: null, badgeCls: '' },
+  { icon: '🔥', category: 'hot',    badge: null, badgeCls: '' },
+  { icon: '📢', category: 'notice', badge: null, badgeCls: '' },
+  { icon: '💬', category: 'free',   badge: null, badgeCls: '' },
+  { icon: '📚', category: 'study',  badge: null, badgeCls: 'blue' },
+  { icon: '❓', category: 'qa',     badge: null, badgeCls: 'green' },
+  { icon: '💼', category: 'career', badge: null, badgeCls: '' },
+  { icon: '📎', category: 'resource', badge: null, badgeCls: '' },
+  { icon: '🎉', category: 'event',  badge: null, badgeCls: '' },
 ]
 
-interface Props {
-  user: User
-  profile: Profile | null
-  initialPosts: Post[]
-  stats: { posts: number; members: number; today: number }
+const UI = {
+  ko: {
+    write: '✏️ 글쓰기', main: '메인', boards: '게시판', myInfo: '내 정보',
+    signOut: '로그아웃', all: '전체', popular: '인기순', latest: '최신순',
+    emptyLine1: '게시글이 없습니다.', emptyLine2: '첫 번째 글을 작성해보세요!',
+    search: '게시글 검색 / Search / 搜索...',
+    nav: ['전체 피드', '인기글', '공지사항', '자유게시판', '스터디 모집', 'Q&A', '취업·인턴', '자료 공유', '학과 이벤트'],
+  },
+  en: {
+    write: '✏️ Write', main: 'Main', boards: 'Boards', myInfo: 'My Info',
+    signOut: 'Sign Out', all: 'All', popular: 'Popular', latest: 'Latest',
+    emptyLine1: 'No posts yet.', emptyLine2: 'Be the first to write!',
+    search: 'Search posts...',
+    nav: ['All Feed', 'Popular', 'Notices', 'General', 'Study Group', 'Q&A', 'Jobs & Intern', 'Resources', 'Events'],
+  },
+  zh: {
+    write: '✏️ 写帖子', main: '主', boards: '板块', myInfo: '我的信息',
+    signOut: '退出', all: '全部', popular: '热门', latest: '最新',
+    emptyLine1: '暂无帖子。', emptyLine2: '来写第一篇吧！',
+    search: '搜索帖子...',
+    nav: ['全部帖子', '热门', '公告', '自由板', '学习组', 'Q&A', '就业·实习', '资料分享', '学科活动'],
+  },
 }
 
-function FeedInner({ user, profile, initialPosts, stats }: Props) {
+function flagToLang(flag: string): Language {
+  if (flag === '🇺🇸') return 'en'
+  if (flag === '🇨🇳') return 'zh'
+  return 'ko'
+}
+
+interface LangDist { ko: number; en: number; zh: number }
+interface HotPost { id: string; title: string; language: string; likes: number }
+export interface OnlineUser {
+  user_id: string; username: string; flag: string; avatar_letter: string;
+}
+
+interface Props { user: User }
+
+function FeedInner({ user }: Props) {
   const router = useRouter()
-  const supabase = createClient()
   const { showToast } = useToast()
 
-  const [posts, setPosts] = useState<Post[]>(initialPosts)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [posts, setPosts] = useState<Post[]>([])
+  const [liveStats, setLiveStats] = useState({ posts: 0, members: 0, today: 0, langDist: { ko: 33, en: 33, zh: 34 } })
+  const [hotPosts, setHotPosts] = useState<HotPost[]>([])
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
+
   const [search, setSearch] = useState('')
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<'new' | 'hot' | 'all'>('all')
   const [langFilter, setLangFilter] = useState({ ko: true, en: true, zh: true })
-  const [showModal, setShowModal] = useState(false)
 
+  const [showModal, setShowModal] = useState(false)
+  const openingModalRef = useRef(false)
+
+  const [uiLang, setUiLang] = useState<Language>('ko')
+  const [loading, setLoading] = useState(true)
+
+  // 1. 프로필 패치 및 언어 설정
+  useEffect(() => {
+    getDoc(doc(db, 'profiles', user.uid)).then((snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as Profile
+        setProfile(data)
+        if (data.language && ['ko', 'en', 'zh'].includes(data.language)) {
+          setUiLang(data.language as Language)
+        }
+      } else {
+        // Fallback
+        const nav = typeof navigator !== 'undefined' ? navigator.language : 'ko'
+        setUiLang(nav.startsWith('zh') ? 'zh' : nav.startsWith('en') ? 'en' : 'ko')
+      }
+    })
+  }, [user.uid])
+
+  useEffect(() => { document.documentElement.lang = uiLang }, [uiLang])
+
+  // 2. 실시간 게시물 목록 & 통계 패치 (Firestore)
+  useEffect(() => {
+    const q = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50))
+    const unsubPosts = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Post))
+      setPosts(docs)
+
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayIso = todayStart.toISOString()
+
+      setLiveStats(prev => ({
+        ...prev,
+        posts: docs.length,
+        today: docs.filter(d => (d.created_at || '') >= todayIso).length
+      }))
+    })
+
+    const unsubProfiles = onSnapshot(collection(db, 'profiles'), (snapshot) => {
+      const members = snapshot.size
+      let ko=0, en=0, zh=0
+      snapshot.forEach(d => {
+        const l = d.data().language
+        if (l==='ko') ko++; else if(l==='en') en++; else if(l==='zh') zh++;
+      })
+      const total = ko+en+zh || 1
+      setLiveStats(prev => ({
+        ...prev,
+        members,
+        langDist: { ko: Math.round(ko/total*100), en: Math.round(en/total*100), zh: Math.round(zh/total*100)}
+      }))
+    })
+
+    setLoading(false)
+
+    return () => { unsubPosts(); unsubProfiles(); }
+  }, [])
+
+  // 3. 실시간 접속자 (Firebase Realtime Database)
+  useEffect(() => {
+    const userRef = ref(rtdb, `presence/${user.uid}`)
+
+    onDisconnect(userRef).remove().catch(console.error)
+    set(userRef, {
+      user_id: user.uid,
+      username: profile?.username || user.email?.split('@')[0] || 'Guest',
+      flag: profile?.flag || '🌍',
+      avatar_letter: profile?.avatar_letter || (user.email?.[0]?.toUpperCase() ?? 'U'),
+      onlineAt: Date.now()
+    }).catch((err) => console.error('presence set 실패 (RTDB 규칙 확인 필요):', err))
+
+    const presenceRef = ref(rtdb, 'presence')
+    const unsubPresence = onValue(
+      presenceRef,
+      (snapshot) => {
+        const data = snapshot.val()
+        setOnlineUsers(data ? (Object.values(data) as OnlineUser[]) : [])
+      },
+      (err) => console.error('presence 읽기 실패 (RTDB 규칙 확인 필요):', err)
+    )
+
+    return () => {
+      remove(userRef).catch(() => {})
+      unsubPresence()
+    }
+  }, [user.uid, profile?.username, profile?.flag, profile?.avatar_letter])
+
+  const t = UI[uiLang]
+  const navItems = NAV_META.map((m, i) => ({ ...m, label: t.nav[i] }))
   const avatarLetter = profile?.avatar_letter ?? user.email?.[0]?.toUpperCase() ?? 'U'
 
-  async function signOut() {
-    await supabase.auth.signOut()
-    router.push('/auth')
-    router.refresh()
+  function openModal() {
+    if (openingModalRef.current) return
+    openingModalRef.current = true
+    setShowModal(true)
+    setTimeout(() => { openingModalRef.current = false }, 300)
   }
 
-  const refreshPosts = useCallback(async () => {
-    const { data } = await (supabase as any)
-      .from('posts')
-      .select(`*, profiles (id, username, flag, role, avatar_letter), likes (count), comments (count)`)
-      .order('pinned', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(30)
+  function closeModal() {
+    setShowModal(false)
+    openingModalRef.current = false
+  }
 
-    const { data: myLikes } = await (supabase as any)
-      .from('likes')
-      .select('post_id')
-      .eq('user_id', user.id)
-
-    const likedRows = (myLikes ?? []) as Array<{ post_id: string }>
-    const likedIds = new Set(likedRows.map((l) => l.post_id))
-
-    const postRows = (data ?? []) as any[]
-    setPosts(postRows.map((p) => ({ ...p, user_liked: likedIds.has(p.id) })))
-  }, [supabase, user.id])
+  async function signOut() {
+    await firebaseSignOut(auth)
+    router.push('/auth')
+  }
 
   const filtered = posts
     .filter((p) => {
@@ -75,180 +196,116 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
       if (!langFilter[p.language as keyof typeof langFilter]) return false
       if (search) {
         const q = search.toLowerCase()
-        if (!p.title.toLowerCase().includes(q) && !p.body.toLowerCase().includes(q)) return false
+        if (!p.title.toLowerCase().includes(q) && !(p.body||'').toLowerCase().includes(q)) return false
       }
       return true
     })
     .sort((a, b) => {
+      const dateA = new Date(a.created_at || 0).getTime()
+      const dateB = new Date(b.created_at || 0).getTime()
       if (a.pinned && !b.pinned) return -1
       if (!a.pinned && b.pinned) return 1
-      if (sortBy === 'hot') {
-        return (b.likes?.[0]?.count ?? 0) - (a.likes?.[0]?.count ?? 0)
-      }
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      return dateB - dateA
     })
 
-  const feedTitle = NAV_ITEMS.find((n) => n.category === activeCategory)?.label ?? '전체 피드'
+  const feedTitle = navItems.find((n) => n.category === activeCategory)?.label ?? t.nav[0]
+
+  if (loading) return <div>Loading Feed...</div>
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="logo">
           <div className="logo-icon">🤖</div>
-          <div>
-            AI경영학과
-            <span className="logo-sub">Woosong · Community</span>
-          </div>
+          <div>AI경영학과<span className="logo-sub">Woosong · Community</span></div>
         </div>
-
         <div className="topbar-search">
           <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            placeholder="게시글 검색 / Search / 搜索..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <input type="text" placeholder={t.search} value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-
         <div className="lang-switcher">
-          <button className="lang-btn ko active">KO</button>
-          <button className="lang-btn en">EN</button>
-          <button className="lang-btn zh">ZH</button>
+          {(['ko', 'en', 'zh'] as const).map((l) => (
+            <button key={l} className={`lang-btn ${l}${uiLang === l ? ' active' : ''}`} onClick={() => setUiLang(l)}>
+              {l.toUpperCase()}
+            </button>
+          ))}
         </div>
-
         <div className="topbar-actions">
-          <div className="notif-btn">
-            🔔
-            <div className="notif-dot" />
-          </div>
-          <div
-            className="avatar-btn"
-            title={profile?.username ?? user.email}
-            onClick={signOut}
-            style={{ cursor: 'pointer' }}
-          >
+          <div className="notif-btn">🔔<div className="notif-dot" /></div>
+          <div className="avatar-btn" title={profile?.username ?? user.email ?? ''} onClick={signOut} style={{ cursor: 'pointer' }}>
             {avatarLetter}
           </div>
         </div>
       </header>
 
       <aside className="sidebar">
-        <button className="write-btn" onClick={() => setShowModal(true)}>
-          ✏️ 글쓰기
+        <button className="write-btn" onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }}>
+          {t.write}
         </button>
-
         <div className="sidebar-section">
-          <div className="sidebar-label">메인</div>
-          {NAV_ITEMS.slice(0, 2).map((item) => (
-            <div
-              key={item.label}
-              className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => {
-                setActiveCategory(item.category)
-                if (item.category === 'hot') setSortBy('hot')
-              }}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
+          <div className="sidebar-label">{t.main}</div>
+          {navItems.slice(0, 2).map((item) => (
+            <div key={item.category ?? 'all'} className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
+              onClick={() => { setActiveCategory(item.category); if (item.category === 'hot') setSortBy('hot'); }}>
+              <span className="nav-icon">{item.icon}</span>{item.label}
             </div>
           ))}
         </div>
-
         <div className="sidebar-divider" />
-
         <div className="sidebar-section">
-          <div className="sidebar-label">게시판</div>
-          {NAV_ITEMS.slice(2).map((item) => (
-            <div
-              key={item.label}
-              className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => {
-                setActiveCategory(item.category as Category)
-                setSortBy('all')
-              }}
-            >
-              <span className="nav-icon">{item.icon}</span>
-              {item.label}
+          <div className="sidebar-label">{t.boards}</div>
+          {navItems.slice(2).map((item) => (
+            <div key={item.category} className={`nav-item ${activeCategory === item.category ? 'active' : ''}`}
+              onClick={() => { setActiveCategory(item.category as Category); setSortBy('all'); }}>
+              <span className="nav-icon">{item.icon}</span>{item.label}
             </div>
           ))}
         </div>
-
         <div className="sidebar-divider" />
-
         <div className="sidebar-section">
-          <div className="sidebar-label">내 정보</div>
+          <div className="sidebar-label">{t.myInfo}</div>
           <div className="nav-item" style={{ color: 'var(--text2)', fontSize: 12 }}>
-            <span className="nav-icon">{profile?.flag ?? '🌍'}</span>
-            {profile?.username ?? user.email}
+            <span className="nav-icon">{profile?.flag ?? '🌍'}</span>{profile?.username ?? user.email}
           </div>
-          <div className="nav-item" onClick={signOut}>
-            <span className="nav-icon">🚪</span>
-            로그아웃
-          </div>
+          <div className="nav-item" onClick={signOut}><span className="nav-icon">🚪</span>{t.signOut}</div>
         </div>
       </aside>
 
       <main className="main">
         <nav className="mobile-cat-bar">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.label}
-              className={`mobile-cat-item ${activeCategory === item.category ? 'active' : ''}`}
-              onClick={() => {
-                setActiveCategory(item.category as Category | null)
-                if (item.category === 'hot') setSortBy('hot')
-                else setSortBy('all')
-              }}
-            >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
+          {navItems.map((item) => (
+            <button key={item.category ?? 'all'} className={`mobile-cat-item ${activeCategory === item.category ? 'active' : ''}`}
+              onClick={() => { setActiveCategory(item.category as Category | null); if (item.category === 'hot') setSortBy('hot'); else setSortBy('all'); }}>
+              <span>{item.icon}</span><span>{item.label}</span>
             </button>
           ))}
         </nav>
-
         <div className="feed-header">
           <div className="feed-title">{feedTitle}</div>
           <div className="filter-tabs">
-            <button className={`filter-tab ${sortBy === 'all' ? 'active' : ''}`} onClick={() => setSortBy('all')}>
-              전체
-            </button>
-            <button className={`filter-tab ${sortBy === 'hot' ? 'active' : ''}`} onClick={() => setSortBy('hot')}>
-              인기순
-            </button>
-            <button className={`filter-tab ${sortBy === 'new' ? 'active' : ''}`} onClick={() => setSortBy('new')}>
-              최신순
-            </button>
+            <button className={`filter-tab ${sortBy === 'all' ? 'active' : ''}`} onClick={() => setSortBy('all')}>{t.all}</button>
+            <button className={`filter-tab ${sortBy === 'hot' ? 'active' : ''}`} onClick={() => setSortBy('hot')}>{t.popular}</button>
+            <button className={`filter-tab ${sortBy === 'new' ? 'active' : ''}`} onClick={() => setSortBy('new')}>{t.latest}</button>
           </div>
           <div className="lang-filter">
             {(['ko', 'en', 'zh'] as const).map((lang) => (
-              <button
-                key={lang}
-                className={`lf-btn ${lang} ${langFilter[lang] ? 'on' : ''}`}
-                onClick={() => setLangFilter((p) => ({ ...p, [lang]: !p[lang] }))}
-              >
+              <button key={lang} className={`lf-btn ${lang} ${langFilter[lang] ? 'on' : ''}`} onClick={() => setLangFilter((p) => ({ ...p, [lang]: !p[lang] }))}>
                 {lang === 'ko' ? '🇰🇷 KO' : lang === 'en' ? '🇺🇸 EN' : '🇨🇳 ZH'}
               </button>
             ))}
           </div>
         </div>
-
         <div className="feed">
           {filtered.length === 0 ? (
             <div className="empty-state">
               <div className="emoji">📭</div>
-              <p>
-                게시글이 없습니다.
-                <br />
-                첫 번째 글을 작성해보세요!
-              </p>
+              <p>{t.emptyLine1}<br />{t.emptyLine2}</p>
             </div>
           ) : (
             filtered.map((post, i) => (
               <PostCard
-                key={post.id}
-                post={post}
-                userId={user.id}
+                key={post.id} post={post} userId={user.uid} uiLang={uiLang}
+                currentUserProfile={profile ? { username: profile.username, flag: profile.flag, avatar_letter: profile.avatar_letter } : null}
                 animDelay={Math.min(i * 0.05, 0.3)}
               />
             ))
@@ -256,27 +313,17 @@ function FeedInner({ user, profile, initialPosts, stats }: Props) {
         </div>
       </main>
 
-      <RightPanel stats={stats} />
+      <RightPanel stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} />
 
-      <button className="mobile-fab" onClick={() => setShowModal(true)} aria-label="글쓰기">
+      <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
         ✏️
       </button>
 
-      {showModal && (
-        <WriteModal
-          userId={user.id}
-          onClose={() => setShowModal(false)}
-          onPosted={refreshPosts}
-        />
-      )}
+      {showModal && <WriteModal userId={user.uid} userRole={profile?.role} uiLang={uiLang} onClose={closeModal} onPosted={() => {}} />}
     </div>
   )
 }
 
 export default function FeedClient(props: Props) {
-  return (
-    <ToastProvider>
-      <FeedInner {...props} />
-    </ToastProvider>
-  )
+  return <ToastProvider><FeedInner {...props} /></ToastProvider>
 }

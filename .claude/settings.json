@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(firebase apphosting:backends:delete aim-board-1 --force)",
+      "Bash(firebase apphosting:backends:update aim-board)",
+      "Bash(firebase apphosting:*)"
+    ]
+  }
+}
