@@ -44,8 +44,10 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       const err = await response.text()
       console.error('[translate] OpenAI API error:', response.status, err)
+      let detail = ''
+      try { detail = JSON.parse(err)?.error?.message ?? '' } catch {}
       return NextResponse.json(
-        { error: `번역 요청 실패 (${response.status})` },
+        { error: `번역 요청 실패 (${response.status})${detail ? ': ' + detail : ''}` },
         { status: 502 }
       )
     }
