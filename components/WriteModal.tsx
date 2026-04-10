@@ -15,10 +15,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'ap
   'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']
 
-// 스탭 이상만 글쓰기 가능한 카테고리 (파일 업로드도 여기서만)
 const STAFF_ONLY: Category[] = ['notice', 'career', 'resource', 'event']
-// 일반 사용자도 글쓰기 가능한 카테고리
-const USER_WRITABLE: Category[] = ['free', 'study', 'qa']
 
 export function isElevated(role: Role | undefined | null): boolean {
   return role === 'admin' || role === 'staff' || role === 'professor'
@@ -147,10 +144,6 @@ function classifyError(err: { code?: string; message?: string }, t: typeof WRITE
   return err.message ?? '알 수 없는 오류가 발생했습니다.'
 }
 
-function isImageUrl(url: string): boolean {
-  return /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url)
-}
-
 interface Props {
   userId: string
   userRole?: Role | null
@@ -164,8 +157,7 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
   const t = WRITE_UI[uiLang]
   const elevated = isElevated(userRole)
 
-  const defaultCategory: Category = elevated ? 'free' : 'free'
-  const [category, setCategory] = useState<Category>(defaultCategory)
+  const [category, setCategory] = useState<Category>('free')
   const [language, setLanguage] = useState<'ko' | 'en' | 'zh'>(uiLang)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -181,23 +173,17 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
 
   function handleCategorySelect(key: Category) {
     const item = CATEGORY_ITEMS.find(c => c.key === key)
-    if (item?.staffOnly && !elevated) return // 클릭 무시
+    if (item?.staffOnly && !elevated) return
     setCategory(key)
-    if (!item?.staffOnly) setFiles([]) // 일반 게시판으로 바뀌면 파일 초기화
+    if (!item?.staffOnly) setFiles([])
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files ?? [])
-    const invalid = selected.find(f => !ALLOWED_TYPES.includes(f.type))
-    if (invalid) { showToast('⚠️', t.errFileType); return }
-    const overSize = selected.find(f => f.size > FILE_MAX_BYTES)
-    if (overSize) { showToast('⚠️', t.errFileSize); return }
+    if (selected.find(f => !ALLOWED_TYPES.includes(f.type))) { showToast('⚠️', t.errFileType); return }
+    if (selected.find(f => f.size > FILE_MAX_BYTES)) { showToast('⚠️', t.errFileSize); return }
     setFiles(selected)
     e.target.value = ''
-  }
-
-  function removeFile(idx: number) {
-    setFiles(prev => prev.filter((_, i) => i !== idx))
   }
 
   async function uploadFiles(): Promise<string[]> {
@@ -207,8 +193,7 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
       const path = `posts/${userId}/${Date.now()}_${file.name}`
       const ref = storageRef(storage, path)
       await uploadBytes(ref, file)
-      const url = await getDownloadURL(ref)
-      urls.push(url)
+      urls.push(await getDownloadURL(ref))
     }
     return urls
   }
@@ -253,24 +238,32 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
         }
       }
 
-      const result = await Promise.race([addPostPromise(), timeout])
+      const result = await Promise.race([
+        addPostPromise(),
+        timeout,
+      ])
 
       if (result.error) {
         if (result.error.code === 'TIMEOUT') {
+          console.error('[WriteModal] 타임아웃')
           showToast('⏱️', t.errTimeout)
         } else {
+          console.error('[WriteModal] insert 에러:', result.error)
           showToast('❌', classifyError(result.error, t))
         }
         return
       }
 
+      console.log('[WriteModal] 글 등록 성공')
       showToast('✅', t.success)
       await onPosted()
       onClose()
     } catch (err: unknown) {
       if (isLockError(err)) {
+        console.error('[WriteModal] Lock 에러 (catch):', err)
         showToast('⚠️', t.errLock)
       } else {
+        console.error('[WriteModal] 예외 발생 (전체 에러 객체):', err)
         const msg = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.'
         showToast('❌', msg)
       }
@@ -308,7 +301,7 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
                 <button
                   key={item.key}
                   type="button"
-                  className={`cat-pill ${category === item.key ? 'selected' : ''} ${locked ? 'cat-pill-locked' : ''}`}
+                  className={`cat-pill ${category === item.key ? 'selected' : ''}`}
                   onClick={() => handleCategorySelect(item.key)}
                   title={locked ? t.noPermission : undefined}
                   style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
@@ -352,7 +345,6 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
             placeholder={t.titlePlaceholder}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            disabled={!canPost}
           />
           <div className={`char-count ${titleOver ? 'over' : ''}`}>
             {title.length} / {TITLE_MAX}
@@ -369,51 +361,35 @@ export default function WriteModal({ userId, userRole, uiLang = 'ko', onClose, o
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={8}
-            disabled={!canPost}
           />
           <div className={`char-count ${bodyOver ? 'over' : ''}`}>
             {body.length} / {BODY_MAX}
           </div>
         </div>
 
-        {/* 파일 첨부 - 스탭 전용 게시판에서만 노출 */}
+        {/* 파일 첨부 — 스탭 전용 게시판에서만 노출 */}
         {elevated && isStaffBoard && (
           <div className="modal-field">
             <label className="field-label">{t.attachFile}</label>
             <div className="attach-area">
-              <button
-                type="button"
-                className="attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
-              >
+              <button type="button" className="attach-btn" onClick={() => fileInputRef.current?.click()} disabled={loading}>
                 📎 {t.attachFile}
               </button>
               <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 8 }}>{t.attachHint}</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept={ALLOWED_TYPES.join(',')}
-                style={{ display: 'none' }}
-                onChange={handleFileChange}
-              />
+              <input ref={fileInputRef} type="file" multiple accept={ALLOWED_TYPES.join(',')}
+                style={{ display: 'none' }} onChange={handleFileChange} />
             </div>
-
             {files.length > 0 && (
               <div className="attach-list">
                 {files.map((f, i) => (
                   <div key={i} className="attach-item">
                     {f.type.startsWith('image/') && (
-                      <img
-                        src={URL.createObjectURL(f)}
-                        alt={f.name}
-                        className="attach-preview"
-                      />
+                      <img src={URL.createObjectURL(f)} alt={f.name} className="attach-preview" />
                     )}
                     <span className="attach-name">{f.name}</span>
                     <span className="attach-size">({(f.size / 1024).toFixed(0)}KB)</span>
-                    <button type="button" className="attach-remove" onClick={() => removeFile(i)}>✕</button>
+                    <button type="button" className="attach-remove"
+                      onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))}>✕</button>
                   </div>
                 ))}
               </div>

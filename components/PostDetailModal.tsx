@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Post } from '@/lib/types'
 import { useToast } from './Toast'
-import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/client'
 
 const COMMENT_MAX = 500
@@ -111,27 +111,89 @@ function PostDetailModalInner({ post, userId, currentUserProfile, uiLang = 'ko',
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => { fetchComments() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function fetchComments() {
+  useEffect(() => {
     setLoadingComments(true)
-    try {
-      const q = query(collection(db, 'comments'), where('post_id', '==', post.id), orderBy('created_at', 'asc'))
-      const snap = await getDocs(q)
-
-      const loaded: CommentRow[] = []
-      for (const d of snap.docs) {
-        const c = { id: d.id, ...d.data() } as any
-        try {
-          const profileSnap = await getDoc(doc(db, 'profiles', c.user_id))
-          c.profiles = profileSnap.exists() ? profileSnap.data() : null
-        } catch(e) { }
-        loaded.push(c as CommentRow)
+    console.log(`[DEBUG] Initializing real-time listener for Post ID: ${post.id}`)
+    
+    const q = query(collection(db, 'comments'), where('post_id', '==', post.id))
+    
+    console.log(`[NUCLEAR-DEBUG] Starting listener. Post Document ID: "${post.id}"`)
+    
+    const unsubscribe = onSnapshot(q, async (snap) => {
+      console.log(`[NUCLEAR-DEBUG] Snapshot received. Found ${snap.size} comments for post_id: "${post.id}"`)
+      
+      if (snap.empty) {
+        // Validation check: what if the field is different?
+        setCommentList([])
+        setCommentCount(0)
+        setLoadingComments(false)
+        console.warn(`[NUCLEAR-DEBUG] Zero comments found. Common causes: 
+          1) Field name is not 'post_id' (case-sensitive)
+          2) Field value is not "${post.id}" (check for spaces)
+          3) Field type is DocumentReference instead of String
+        `)
+        return
       }
+
+      // EXTREME DEBUG: Examine the first doc
+      const firstDoc = snap.docs[0]
+      const firstData = firstDoc.data()
+      console.log('[NUCLEAR-DEBUG] First comment ID:', firstDoc.id)
+      console.log('[NUCLEAR-DEBUG] First comment data structure:', firstData)
+      console.log('[NUCLEAR-DEBUG] post_id type:', typeof firstData.post_id)
+      console.log('[NUCLEAR-DEBUG] user_id value:', firstData.user_id || firstData.userId)
+
+      const userIds = Array.from(new Set(snap.docs.map(d => d.data().user_id || d.data().userId).filter(Boolean))) as string[]
+      const profileMap: Record<string, any> = {}
+
+      if (userIds.length > 0) {
+        try {
+          // Batch fetch profiles (max 30 per 'in' query)
+          for (let i = 0; i < userIds.length; i += 30) {
+            const chunk = userIds.slice(i, i + 30)
+            const pSnap = await getDocs(query(collection(db, 'profiles'), where('id', 'in', chunk)))
+            pSnap.forEach(d => { profileMap[d.id] = d.data() })
+          }
+        } catch (perr) {
+          console.error('[DEBUG] Profile fetch error:', perr)
+        }
+      }
+
+      const loaded = snap.docs.map(d => {
+        const data = d.data()
+        const uid = data.user_id || data.userId
+        return {
+          id: d.id,
+          ...data,
+          profiles: profileMap[uid] || null
+        } as CommentRow
+      })
+
+      // Defensive sorting
+      loaded.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+        return timeA - timeB
+      })
+
       setCommentList(loaded)
       setCommentCount(loaded.length)
-    } catch { }
-    finally { setLoadingComments(false) }
+      setLoadingComments(false)
+    }, (err) => {
+      console.error('[DEBUG] onSnapshot failed:', err)
+      showToast('❌', '실시간 댓글 동기화 실패')
+      setLoadingComments(false)
+    })
+
+    return () => {
+      console.log(`[DEBUG] Closing listener for Post ID: ${post.id}`)
+      unsubscribe()
+    }
+  }, [post.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // We keep the fetchComments stub for manual calls if needed, but it's now mostly redundant
+  async function fetchComments() {
+    // onSnapshot handles this automatically, but we'll leave the function name for compatibility
   }
 
   async function handleTranslate() {
@@ -246,7 +308,6 @@ function PostDetailModalInner({ post, userId, currentUserProfile, uiLang = 'ko',
             {renderWithLinks(showTranslated && translated ? translated.body : post.body)}
           </div>
 
-          {/* 이미지 썸네일 및 첨부파일 */}
           {post.attachments && post.attachments.length > 0 && (
             <div className="post-attachments" style={{ marginTop: 16 }}>
               {post.attachments.filter(isImageUrl).map((url, i) => (

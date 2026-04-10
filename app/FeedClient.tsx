@@ -1,31 +1,34 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, signOut as firebaseSignOut } from 'firebase/auth'
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where, setDoc } from 'firebase/firestore'
 import { ref, onValue, set, onDisconnect, remove } from 'firebase/database'
 import { auth, db, rtdb } from '@/lib/firebase/client'
 import { Post, Profile, Category, Language } from '@/lib/types'
 import PostCard from '@/components/PostCard'
 import WriteModal from '@/components/WriteModal'
 import RightPanel from '@/components/RightPanel'
+import ProfileSettingsModal from '@/components/ProfileSettingsModal'
+import NotificationBell from '@/components/NotificationBell'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_META = [
-  { icon: '🏠', category: null,     badge: null, badgeCls: '' },
-  { icon: '🔥', category: 'hot',    badge: null, badgeCls: '' },
-  { icon: '📢', category: 'notice', badge: null, badgeCls: '' },
-  { icon: '💬', category: 'free',   badge: null, badgeCls: '' },
-  { icon: '📚', category: 'study',  badge: null, badgeCls: 'blue' },
-  { icon: '❓', category: 'qa',     badge: null, badgeCls: 'green' },
-  { icon: '💼', category: 'career', badge: null, badgeCls: '' },
+  { icon: '🏠', category: null,       badge: null, badgeCls: '' },
+  { icon: '🔥', category: 'hot',      badge: null, badgeCls: '' },
+  { icon: '📢', category: 'notice',   badge: null, badgeCls: '' },
+  { icon: '💬', category: 'free',     badge: null, badgeCls: '' },
+  { icon: '📚', category: 'study',    badge: null, badgeCls: 'blue' },
+  { icon: '❓', category: 'qa',       badge: null, badgeCls: 'green' },
+  { icon: '💼', category: 'career',   badge: null, badgeCls: '' },
   { icon: '📎', category: 'resource', badge: null, badgeCls: '' },
-  { icon: '🎉', category: 'event',  badge: null, badgeCls: '' },
+  { icon: '🎉', category: 'event',    badge: null, badgeCls: '' },
 ]
 
 const UI = {
   ko: {
+    logoTitle: 'AI경영학과', logoSub: 'Woosong · Community',
     write: '✏️ 글쓰기', main: '메인', boards: '게시판', myInfo: '내 정보',
     signOut: '로그아웃', all: '전체', popular: '인기순', latest: '최신순',
     emptyLine1: '게시글이 없습니다.', emptyLine2: '첫 번째 글을 작성해보세요!',
@@ -33,6 +36,7 @@ const UI = {
     nav: ['전체 피드', '인기글', '공지사항', '자유게시판', '스터디 모집', 'Q&A', '취업·인턴', '자료 공유', '학과 이벤트'],
   },
   en: {
+    logoTitle: 'AI Management', logoSub: 'Woosong · Community',
     write: '✏️ Write', main: 'Main', boards: 'Boards', myInfo: 'My Info',
     signOut: 'Sign Out', all: 'All', popular: 'Popular', latest: 'Latest',
     emptyLine1: 'No posts yet.', emptyLine2: 'Be the first to write!',
@@ -40,6 +44,7 @@ const UI = {
     nav: ['All Feed', 'Popular', 'Notices', 'General', 'Study Group', 'Q&A', 'Jobs & Intern', 'Resources', 'Events'],
   },
   zh: {
+    logoTitle: 'AI经营学科', logoSub: '우송大学 · 社区',
     write: '✏️ 写帖子', main: '主', boards: '板块', myInfo: '我的信息',
     signOut: '退出', all: '全部', popular: '热门', latest: '最新',
     emptyLine1: '暂无帖子。', emptyLine2: '来写第一篇吧！',
@@ -54,8 +59,8 @@ function flagToLang(flag: string): Language {
   return 'ko'
 }
 
-interface LangDist { ko: number; en: number; zh: number }
 interface HotPost { id: string; title: string; language: string; likes: number }
+interface CountryCount { flag: string; count: number }
 export interface OnlineUser {
   user_id: string; username: string; flag: string; avatar_letter: string;
 }
@@ -70,6 +75,7 @@ function FeedInner({ user }: Props) {
   const [posts, setPosts] = useState<Post[]>([])
   const [liveStats, setLiveStats] = useState({ posts: 0, members: 0, today: 0, langDist: { ko: 33, en: 33, zh: 34 } })
   const [hotPosts, setHotPosts] = useState<HotPost[]>([])
+  const [countryDist, setCountryDist] = useState<CountryCount[]>([])
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
 
   const [search, setSearch] = useState('')
@@ -78,14 +84,30 @@ function FeedInner({ user }: Props) {
   const [langFilter, setLangFilter] = useState({ ko: true, en: true, zh: true })
 
   const [showModal, setShowModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return localStorage.getItem('theme') !== 'light'
+  })
   const openingModalRef = useRef(false)
 
   const [uiLang, setUiLang] = useState<Language>('ko')
   const [loading, setLoading] = useState(true)
 
+  useEffect(() => {
+    const html = document.documentElement
+    if (isDark) {
+      html.classList.remove('light')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      html.classList.add('light')
+      localStorage.setItem('theme', 'light')
+    }
+  }, [isDark])
+
   // 1. 프로필 패치 및 언어 설정
   useEffect(() => {
-    getDoc(doc(db, 'profiles', user.uid)).then((snap) => {
+    getDoc(doc(db, 'profiles', user.uid)).then(async (snap) => {
       if (snap.exists()) {
         const data = snap.data() as Profile
         setProfile(data)
@@ -93,9 +115,22 @@ function FeedInner({ user }: Props) {
           setUiLang(data.language as Language)
         }
       } else {
-        // Fallback
+        // 프로필 없으면 이메일 기반으로 자동 생성
         const nav = typeof navigator !== 'undefined' ? navigator.language : 'ko'
-        setUiLang(nav.startsWith('zh') ? 'zh' : nav.startsWith('en') ? 'en' : 'ko')
+        const lang = nav.startsWith('zh') ? 'zh' : nav.startsWith('en') ? 'en' : 'ko'
+        const defaultUsername = user.email?.split('@')[0] ?? 'User'
+        const newProfile: Profile = {
+          id: user.uid,
+          username: defaultUsername,
+          flag: lang === 'zh' ? '🇨🇳' : lang === 'en' ? '🇺🇸' : '🇰🇷',
+          language: lang as Language,
+          avatar_letter: defaultUsername[0].toUpperCase(),
+          role: 'student',
+          created_at: new Date().toISOString()
+        }
+        await setDoc(doc(db, 'profiles', user.uid), newProfile)
+        setProfile(newProfile)
+        setUiLang(lang as Language)
       }
     })
   }, [user.uid])
@@ -106,7 +141,7 @@ function FeedInner({ user }: Props) {
   useEffect(() => {
     const q = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50))
     const unsubPosts = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Post))
+      const docs = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Post))
       setPosts(docs)
 
       const todayStart = new Date()
@@ -122,43 +157,68 @@ function FeedInner({ user }: Props) {
 
     const unsubProfiles = onSnapshot(collection(db, 'profiles'), (snapshot) => {
       const members = snapshot.size
-      let ko=0, en=0, zh=0
+      const flagMap: Record<string, number> = {}
       snapshot.forEach(d => {
-        const l = d.data().language
-        if (l==='ko') ko++; else if(l==='en') en++; else if(l==='zh') zh++;
+        const f = d.data().flag || '🌍'
+        flagMap[f] = (flagMap[f] || 0) + 1
       })
-      const total = ko+en+zh || 1
-      setLiveStats(prev => ({
-        ...prev,
-        members,
-        langDist: { ko: Math.round(ko/total*100), en: Math.round(en/total*100), zh: Math.round(zh/total*100)}
-      }))
+      const sorted = Object.entries(flagMap)
+        .map(([flag, count]) => ({ flag, count }))
+        .sort((a, b) => b.count - a.count)
+      setCountryDist(sorted)
+      setLiveStats(prev => ({ ...prev, members }))
+    })
+
+    const unsubLikes = onSnapshot(collection(db, 'likes'), (likesSnap) => {
+      const likesMap: Record<string, number> = {}
+      likesSnap.forEach(d => {
+        const pid = d.data().post_id
+        if (pid) likesMap[pid] = (likesMap[pid] || 0) + 1
+      })
+      setPosts(prev => {
+        const top = [...prev]
+          .map(p => ({ ...p, _likes: likesMap[p.id] || 0 }))
+          .sort((a, b) => b._likes - a._likes)
+          .slice(0, 5)
+          .map(p => ({ id: p.id, title: p.title, language: p.language, likes: p._likes }))
+        setHotPosts(top)
+        return prev
+      })
     })
 
     setLoading(false)
 
-    return () => { unsubPosts(); unsubProfiles(); }
+    return () => { unsubPosts(); unsubProfiles(); unsubLikes() }
   }, [])
 
   // 3. 실시간 접속자 (Firebase Realtime Database)
   useEffect(() => {
     const userRef = ref(rtdb, `presence/${user.uid}`)
+    const username = profile?.username || user.email?.split('@')[0] || 'Guest'
+    const flag = profile?.flag || '🌍'
+    const avatarLetter = profile?.avatar_letter || (user.email?.[0]?.toUpperCase() ?? 'U')
 
     onDisconnect(userRef).remove().catch(console.error)
     set(userRef, {
       user_id: user.uid,
-      username: profile?.username || user.email?.split('@')[0] || 'Guest',
-      flag: profile?.flag || '🌍',
-      avatar_letter: profile?.avatar_letter || (user.email?.[0]?.toUpperCase() ?? 'U'),
+      username,
+      flag,
+      avatar_letter: avatarLetter,
       onlineAt: Date.now()
     }).catch((err) => console.error('presence set 실패 (RTDB 규칙 확인 필요):', err))
+
+    // 본인을 항상 목록에 포함시켜 즉시 반영
+    const selfUser: OnlineUser = { user_id: user.uid, username, flag, avatar_letter: avatarLetter }
 
     const presenceRef = ref(rtdb, 'presence')
     const unsubPresence = onValue(
       presenceRef,
       (snapshot) => {
         const data = snapshot.val()
-        setOnlineUsers(data ? (Object.values(data) as OnlineUser[]) : [])
+        const others: OnlineUser[] = data
+          ? (Object.values(data) as OnlineUser[]).filter(u => u.user_id !== user.uid)
+          : []
+        setOnlineUsers([selfUser, ...others])
       },
       (err) => console.error('presence 읽기 실패 (RTDB 규칙 확인 필요):', err)
     )
@@ -196,7 +256,7 @@ function FeedInner({ user }: Props) {
       if (!langFilter[p.language as keyof typeof langFilter]) return false
       if (search) {
         const q = search.toLowerCase()
-        if (!p.title.toLowerCase().includes(q) && !(p.body||'').toLowerCase().includes(q)) return false
+        if (!p.title.toLowerCase().includes(q) && !(p.body || '').toLowerCase().includes(q)) return false
       }
       return true
     })
@@ -217,7 +277,7 @@ function FeedInner({ user }: Props) {
       <header className="topbar">
         <div className="logo">
           <div className="logo-icon">🤖</div>
-          <div>AI경영학과<span className="logo-sub">Woosong · Community</span></div>
+          <div>{t.logoTitle}<span className="logo-sub">{t.logoSub}</span></div>
         </div>
         <div className="topbar-search">
           <span className="search-icon">🔍</span>
@@ -231,8 +291,23 @@ function FeedInner({ user }: Props) {
           ))}
         </div>
         <div className="topbar-actions">
-          <div className="notif-btn">🔔<div className="notif-dot" /></div>
-          <div className="avatar-btn" title={profile?.username ?? user.email ?? ''} onClick={signOut} style={{ cursor: 'pointer' }}>
+          <button
+            onClick={() => setIsDark(d => !d)}
+            title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
+            style={{
+              background: 'var(--surface2)', border: '1px solid var(--border2)',
+              borderRadius: 8, width: 34, height: 34, cursor: 'pointer',
+              fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--text2)', flexShrink: 0,
+            }}
+          >
+            {isDark ? '☀️' : '🌙'}
+          </button>
+          <NotificationBell
+            userId={user.uid}
+            userPosts={posts.filter(p => p.user_id === user.uid).map(p => ({ id: p.id, title: p.title }))}
+          />
+          <div className="avatar-btn" title="프로필 설정" onClick={() => setShowProfileModal(true)} style={{ cursor: 'pointer' }}>
             {avatarLetter}
           </div>
         </div>
@@ -313,13 +388,21 @@ function FeedInner({ user }: Props) {
         </div>
       </main>
 
-      <RightPanel stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} />
+      <RightPanel stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} countryDist={countryDist} />
 
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
         ✏️
       </button>
 
       {showModal && <WriteModal userId={user.uid} userRole={profile?.role} uiLang={uiLang} onClose={closeModal} onPosted={() => {}} />}
+      {showProfileModal && profile && (
+        <ProfileSettingsModal
+          profile={profile}
+          uiLang={uiLang}
+          onClose={() => setShowProfileModal(false)}
+          onSaved={(updated) => { setProfile(updated); setShowProfileModal(false) }}
+        />
+      )}
     </div>
   )
 }

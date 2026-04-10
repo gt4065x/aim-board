@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Post, Category } from '@/lib/types'
 import { useToast } from './Toast'
 import PostDetailModal from './PostDetailModal'
-import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/lib/firebase/client'
 
 const CATEGORY_INFO: Record<Category, { label: string; cls: string }> = {
@@ -24,7 +24,6 @@ function avatarClass(flag: string) {
   return ''
 }
 
-// URL을 하이퍼링크로 변환하여 React 노드 배열로 반환
 function renderWithLinks(text: string): React.ReactNode[] {
   const urlRegex = /(https?:\/\/[^\s<>"']+)/g
   const parts = text.split(urlRegex)
@@ -83,6 +82,50 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
   const [liked, setLiked] = useState(post.user_liked ?? false)
   const [likes, setLikes] = useState(post.likes?.[0]?.count ?? 0)
   const [showDetail, setShowDetail] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editTitle, setEditTitle] = useState(post.title)
+  const [editBody, setEditBody] = useState(post.body)
+  const [deleted, setDeleted] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const isOwner = userId === post.user_id
+
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
+
+  async function handleDelete() {
+    try {
+      await deleteDoc(doc(db, 'posts', post.id))
+      setDeleted(true)
+      showToast('✅', '게시글이 삭제되었습니다.')
+    } catch (e: any) {
+      console.error('[delete] failed:', e)
+      showToast('❌', `삭제 실패: ${e?.code || e?.message || '오류'}`)
+    }
+  }
+
+  async function handleEditSave() {
+    if (!editTitle.trim()) { showToast('❌', '제목을 입력해주세요.'); return }
+    try {
+      await updateDoc(doc(db, 'posts', post.id), {
+        title: editTitle.trim(),
+        body: editBody.trim(),
+      })
+      setEditing(false)
+      showToast('✅', '수정되었습니다.')
+    } catch {
+      showToast('❌', '수정 중 오류가 발생했습니다.')
+    }
+  }
+
+  if (deleted) return null
 
   const [translated, setTranslated] = useState<{ title: string; body: string } | null>(null)
   const [translating, setTranslating] = useState(false)
@@ -100,18 +143,29 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
 
   // Firebase: Fetch real likes count and user_liked state on load since it's missing in initial load sometimes
   useEffect(() => {
-    async function loadLikes() {
-      const q = query(collection(db, 'likes'), where('post_id', '==', post.id))
-      const snap = await getDocs(q)
+    if (!post.id) return
+    console.log(`[NUCLEAR-DEBUG] PostCard ID: "${post.id}" (Ref: ${post.title.substring(0, 10)}...)`)
+    
+    // 1. Real-time Likes
+    const qLikes = query(collection(db, 'likes'), where('post_id', '==', post.id))
+    const unsubLikes = onSnapshot(qLikes, (snap) => {
       setLikes(snap.size)
-      if (userId) setLiked(snap.docs.some(d => d.data().user_id === userId))
-      
-      // Load comment count
-      const cQ = query(collection(db, 'comments'), where('post_id', '==', post.id))
-      const cSnap = await getDocs(cQ)
-      setCommentCount(cSnap.size)
+      if (userId) {
+        const likedByMe = snap.docs.some(d => (d.data().user_id || d.data().userId) === userId)
+        setLiked(likedByMe)
+      }
+    })
+
+    // 2. Real-time Comment Count
+    const qCommentsCount = query(collection(db, 'comments'), where('post_id', '==', post.id))
+    const unsubCommentsCount = onSnapshot(qCommentsCount, (snap) => {
+      setCommentCount(snap.size)
+    })
+
+    return () => {
+      unsubLikes()
+      unsubCommentsCount()
     }
-    loadLikes()
   }, [post.id, userId])
 
   useEffect(() => {
@@ -119,30 +173,67 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
     setShowTranslated(false)
   }, [uiLang])
 
-  async function fetchComments() {
+  useEffect(() => {
+    if (!showComments || !post.id) return
+
     setLoadingComments(true)
-    try {
-      const q = query(collection(db, 'comments'), where('post_id', '==', post.id), orderBy('created_at', 'asc'))
-      const snap = await getDocs(q)
+    console.log(`[DEBUG] PostCard loading comments listener for: ${post.id}`)
+    
+    const q = query(collection(db, 'comments'), where('post_id', '==', post.id))
+    
+    const unsubscribe = onSnapshot(q, async (snap) => {
+      console.log(`[DEBUG] PostCard comments snapshot: ${snap.size}`)
       
-      const loaded: CommentRow[] = []
-      for (const d of snap.docs) {
-        const c = { id: d.id, ...d.data() } as any
-        try {
-          const profileSnap = await getDoc(doc(db, 'profiles', c.user_id))
-          c.profiles = profileSnap.exists() ? profileSnap.data() : null
-        } catch(e) { }
-        loaded.push(c as CommentRow)
+      if (snap.empty) {
+        setCommentList([])
+        setLoadingComments(false)
+        return
       }
+
+      const userIds = Array.from(new Set(snap.docs.map(d => d.data().user_id || d.data().userId).filter(Boolean))) as string[]
+      const profileMap: Record<string, any> = {}
+
+      if (userIds.length > 0) {
+        try {
+          for (let i = 0; i < userIds.length; i += 30) {
+            const chunk = userIds.slice(i, i + 30)
+            const pSnap = await getDocs(query(collection(db, 'profiles'), where('id', 'in', chunk)))
+            pSnap.forEach(d => { profileMap[d.id] = d.data() })
+          }
+        } catch (e) {
+          console.error('[DEBUG] PostCard profile fetch error:', e)
+        }
+      }
+
+      const loaded = snap.docs.map(d => {
+        const data = d.data()
+        const uid = data.user_id || data.userId
+        return {
+          id: d.id,
+          ...data,
+          profiles: profileMap[uid] || null
+        } as CommentRow
+      })
+
+      loaded.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+        return timeA - timeB
+      })
+
       setCommentList(loaded)
-      setCommentCount(loaded.length)
-    } catch (err) {
-      console.error('fetch comments exception:', err)
-      showToast('❌', '댓글을 불러오지 못했습니다.')
-    } finally {
       setLoadingComments(false)
-    }
-  }
+    }, (err) => {
+      console.error('[DEBUG] PostCard onSnapshot failed:', err)
+      showToast('❌', '댓글 로딩 중 오류가 발생했습니다.')
+      setLoadingComments(false)
+    })
+
+    return () => unsubscribe()
+  }, [showComments, post.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stub for compatibility with existing toggle logic
+  async function fetchComments() {}
 
   async function toggleComments() {
     const next = !showComments
@@ -255,33 +346,101 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
           <div className="post-time">{timeAgo(post.created_at)}</div>
         </div>
         <span className={`post-category ${catInfo.cls}`}>{catInfo.label}</span>
+        {isOwner && (
+          <div ref={menuRef} style={{ position: 'relative', marginLeft: 'auto' }}>
+            <button onClick={() => setShowMenu(m => !m)} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text3)', fontSize: 18, padding: '0 4px', lineHeight: 1,
+            }}>⋯</button>
+            {showMenu && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, zIndex: 50,
+                background: 'var(--surface)', border: '1px solid var(--border2)',
+                borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+                overflow: 'hidden', minWidth: 110,
+              }}>
+                <button onClick={() => { setEditing(true); setShowMenu(false) }} style={{
+                  display: 'block', width: '100%', padding: '10px 16px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text1)', fontSize: 13, textAlign: 'left',
+                }}>✏️ 수정</button>
+                {confirmDelete ? (
+                  <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>정말 삭제할까요?</div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); setConfirmDelete(false); handleDelete() }} style={{
+                        flex: 1, padding: '6px', background: '#ef4444', border: 'none',
+                        borderRadius: 6, cursor: 'pointer', color: '#fff', fontSize: 12, fontWeight: 600,
+                      }}>삭제</button>
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false) }} style={{
+                        flex: 1, padding: '6px', background: 'var(--surface2)', border: '1px solid var(--border2)',
+                        borderRadius: 6, cursor: 'pointer', color: 'var(--text2)', fontSize: 12,
+                      }}>취소</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true) }} style={{
+                    display: 'block', width: '100%', padding: '10px 16px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: '#ef4444', fontSize: 13, textAlign: 'left',
+                  }}>🗑️ 삭제</button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="post-title post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
-        {showTranslated && translated ? translated.title : post.title}
-      </div>
-      <div className="post-body post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer', whiteSpace: 'pre-wrap' }}>
-        {renderWithLinks(showTranslated && translated ? translated.body : post.body)}
-      </div>
-
-      {/* 이미지 썸네일 */}
-      {post.attachments && post.attachments.length > 0 && (
-        <div className="post-attachments">
-          {post.attachments.filter(isImageUrl).map((url, i) => (
-            <a key={i} href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-              <img src={url} alt={`첨부 이미지 ${i + 1}`} className="post-thumb" />
-            </a>
-          ))}
-          {post.attachments.filter(u => !isImageUrl(u)).map((url, i) => (
-            <a key={`f-${i}`} href={url} target="_blank" rel="noopener noreferrer"
-              className="post-file-link" onClick={(e) => e.stopPropagation()}>
-              📎 {decodeURIComponent(url.split('/').pop()?.split('?')[0] ?? '파일')}
-            </a>
-          ))}
+      {editing ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '8px 0' }}>
+          <input
+            className="field-input"
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            placeholder="제목"
+            style={{ fontWeight: 600 }}
+          />
+          <textarea
+            className="field-input"
+            value={editBody}
+            onChange={e => setEditBody(e.target.value)}
+            placeholder="내용"
+            rows={4}
+            style={{ resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn-submit" onClick={handleEditSave} style={{ flex: 1, padding: '8px' }}>저장</button>
+            <button onClick={() => { setEditing(false); setEditTitle(post.title); setEditBody(post.body) }}
+              style={{ flex: 1, padding: '8px', background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer', color: 'var(--text2)', fontSize: 13 }}>취소</button>
+          </div>
         </div>
+      ) : (
+        <>
+          <div className="post-title post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer' }}>
+            {showTranslated && translated ? translated.title : editTitle || post.title}
+          </div>
+          <div className="post-body post-clickable" onClick={() => setShowDetail(true)} style={{ cursor: 'pointer', whiteSpace: 'pre-wrap' }}>
+            {renderWithLinks(showTranslated && translated ? translated.body : editBody || post.body)}
+          </div>
+          {post.attachments && post.attachments.length > 0 && (
+            <div className="post-attachments">
+              {post.attachments.filter(isImageUrl).map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+                  <img src={url} alt={`첨부 이미지 ${i + 1}`} className="post-thumb" />
+                </a>
+              ))}
+              {post.attachments.filter(u => !isImageUrl(u)).map((url, i) => (
+                <a key={`f-${i}`} href={url} target="_blank" rel="noopener noreferrer"
+                  className="post-file-link" onClick={(e) => e.stopPropagation()}>
+                  📎 {decodeURIComponent(url.split('/').pop()?.split('?')[0] ?? '파일')}
+                </a>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {showTranslated && translated && (
+      {!editing && showTranslated && translated && (
         <div className="translate-badge">🌐 AI 번역됨 (원문 언어: {post.language})</div>
       )}
 

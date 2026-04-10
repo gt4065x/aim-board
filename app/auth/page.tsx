@@ -116,7 +116,7 @@ export default function AuthPage() {
               setError('')
             }}
           >
-            로그인
+            Login / 로그인
           </button>
           <button
             className={`auth-tab ${tab === 'signup' ? 'active' : ''}`}
@@ -125,7 +125,7 @@ export default function AuthPage() {
               setError('')
             }}
           >
-            회원가입
+            Sign Up / 회원가입
           </button>
         </div>
 
@@ -135,7 +135,7 @@ export default function AuthPage() {
           {tab === 'signup' && (
             <>
               <div className="modal-field">
-                <label className="field-label">이름 (닉네임)</label>
+                <label className="field-label">Name (Nickname) / 이름 (닉네임)</label>
                 <input
                   id="username"
                   name="username"
@@ -149,7 +149,7 @@ export default function AuthPage() {
               </div>
 
               <div className="modal-field">
-                <label className="field-label">국가</label>
+                <label className="field-label">Country / 국가</label>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {flags.map((f) => (
                     <button
@@ -168,7 +168,7 @@ export default function AuthPage() {
           )}
 
           <div className="modal-field">
-            <label className="field-label">이메일</label>
+            <label className="field-label">Email / 이메일</label>
             <input
               id="email"
               name="email"
@@ -183,13 +183,13 @@ export default function AuthPage() {
           </div>
 
           <div className="modal-field">
-            <label className="field-label">비밀번호</label>
+            <label className="field-label">Password / 비밀번호</label>
             <input
               id="password"
               name="password"
               className="field-input"
               type="password"
-              placeholder="8자 이상"
+              placeholder="8+ characters / 8자 이상"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
@@ -205,10 +205,10 @@ export default function AuthPage() {
             disabled={loading}
           >
             {loading
-              ? '처리 중...'
+              ? 'Processing... / 처리 중...'
               : tab === 'login'
-                ? '로그인'
-                : '가입하기 🚀'}
+                ? 'Login / 로그인'
+                : 'Join Now / 가입하기 🚀'}
           </button>
         </form>
       </div>
