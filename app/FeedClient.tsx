@@ -12,6 +12,7 @@ import WriteModal from '@/components/WriteModal'
 import RightPanel from '@/components/RightPanel'
 import ProfileSettingsModal from '@/components/ProfileSettingsModal'
 import NotificationBell from '@/components/NotificationBell'
+import AdminPanel from '@/components/AdminPanel'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_META = [
@@ -85,6 +86,7 @@ function FeedInner({ user }: Props) {
 
   const [showModal, setShowModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [isDark, setIsDark] = useState(true)
   const openingModalRef = useRef(false)
 
@@ -346,6 +348,12 @@ function FeedInner({ user }: Props) {
             <span className="nav-icon">{profile?.flag ?? '🌍'}</span>{profile?.username ?? user.email}
           </div>
           <div className="nav-item" onClick={signOut}><span className="nav-icon">🚪</span>{t.signOut}</div>
+          {(profile?.role === 'admin' || profile?.role === 'staff') && (
+            <div className="nav-item" onClick={() => setShowAdminPanel(true)}>
+              <span className="nav-icon">🛡️</span>
+              {profile.role === 'admin' ? '어드민 패널' : '스탭 패널'}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -406,6 +414,7 @@ function FeedInner({ user }: Props) {
           onSaved={(updated) => { setProfile(updated); setShowProfileModal(false) }}
         />
       )}
+      {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
     </div>
   )
 }
