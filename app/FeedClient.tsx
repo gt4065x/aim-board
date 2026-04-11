@@ -313,14 +313,33 @@ function FeedInner({ user }: Props) {
           <button
             onClick={() => setIsDark(d => !d)}
             title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
-            style={{
-              background: 'var(--surface2)', border: '1px solid var(--border2)',
-              borderRadius: 8, width: 34, height: 34, cursor: 'pointer',
-              fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--text2)', flexShrink: 0,
-            }}
+            className="topbar-icon-btn"
           >
             {isDark ? '☀️' : '🌙'}
+          </button>
+          {/* 모바일 전용 버튼 */}
+          <button
+            className="topbar-icon-btn mobile-only"
+            title="온라인 사용자"
+            onClick={() => setShowMobileOnline(v => !v)}
+          >
+            👥
+          </button>
+          {(profile?.role === 'admin' || profile?.role === 'staff') && (
+            <button
+              className="topbar-icon-btn mobile-only"
+              title="어드민 패널"
+              onClick={() => setShowAdminPanel(true)}
+            >
+              🛡️
+            </button>
+          )}
+          <button
+            className="topbar-icon-btn mobile-only"
+            title="로그아웃"
+            onClick={signOut}
+          >
+            🚪
           </button>
           <NotificationBell
             userId={user.uid}
@@ -422,28 +441,6 @@ function FeedInner({ user }: Props) {
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
         ✏️
       </button>
-
-      {/* 모바일 전용 좌측 FAB: 온라인 유저 + 어드민 */}
-      <div className="mobile-side-fabs">
-        <button
-          className="mobile-side-fab"
-          style={{ background: '#22c55e', color: '#fff' }}
-          onClick={() => setShowMobileOnline(v => !v)}
-          title="온라인 사용자"
-        >
-          👥
-        </button>
-        {(profile?.role === 'admin' || profile?.role === 'staff') && (
-          <button
-            className="mobile-side-fab"
-            style={{ background: 'var(--accent)', color: '#fff' }}
-            onClick={() => setShowAdminPanel(true)}
-            title="어드민 패널"
-          >
-            🛡️
-          </button>
-        )}
-      </div>
 
       {/* 모바일 온라인 유저 시트 */}
       {showMobileOnline && (
