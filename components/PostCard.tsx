@@ -104,7 +104,24 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
 
   async function handleDelete() {
     try {
-      await deleteDoc(doc(db, 'posts', post.id))
+      if (isAdmin && !isOwner) {
+        // 어드민이 타인 글 삭제: 서버 API 경유
+        const { getIdToken } = await import('firebase/auth')
+        const { auth } = await import('@/lib/firebase/client')
+        const currentUser = auth.currentUser
+        if (!currentUser) throw new Error('로그인 상태가 아닙니다.')
+        const idToken = await getIdToken(currentUser)
+
+        const res = await fetch('/api/admin/delete-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ postId: post.id }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? '삭제 실패')
+      } else {
+        await deleteDoc(doc(db, 'posts', post.id))
+      }
       setDeleted(true)
       showToast('✅', '게시글이 삭제되었습니다.')
     } catch (e: any) {
