@@ -1,13 +1,15 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { ref, push, onValue, off, serverTimestamp } from 'firebase/database'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { ref, push, onValue, off } from 'firebase/database'
 import { rtdb } from '@/lib/firebase/client'
+import type { Language } from '@/lib/types'
 
 interface Message {
   id: string
   sender_id: string
   body: string
+  lang: Language
   created_at: number
 }
 
@@ -15,10 +17,12 @@ interface Props {
   myUserId: string
   myUsername: string
   myAvatarLetter: string
+  myLanguage: Language
   targetUserId: string
   targetUsername: string
   targetAvatarLetter: string
   targetFlag: string
+  targetLanguage: Language
   onClose: () => void
 }
 
@@ -27,15 +31,19 @@ function getChatId(uid1: string, uid2: string) {
 }
 
 export default function DirectChatModal({
-  myUserId, myUsername, myAvatarLetter,
-  targetUserId, targetUsername, targetAvatarLetter, targetFlag,
+  myUserId, myAvatarLetter, myLanguage,
+  targetUserId, targetUsername, targetAvatarLetter, targetFlag, targetLanguage,
   onClose,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  // msgId → 번역된 텍스트 캐시
+  const [translations, setTranslations] = useState<Record<string, string>>({})
+  const [translating, setTranslating] = useState<Record<string, boolean>>({})
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const needsTranslation = myLanguage !== targetLanguage
 
   const chatId = getChatId(myUserId, targetUserId)
   const chatRef = ref(rtdb, `dms/${chatId}`)
@@ -48,6 +56,7 @@ export default function DirectChatModal({
         id,
         sender_id: m.sender_id,
         body: m.body,
+        lang: m.lang ?? 'ko',
         created_at: m.created_at ?? 0,
       }))
       msgs.sort((a, b) => a.created_at - b.created_at)
@@ -56,9 +65,40 @@ export default function DirectChatModal({
     return () => off(chatRef, 'value', listener)
   }, [chatId])
 
+  // 번역이 필요한 메시지 자동 번역
+  useEffect(() => {
+    if (!needsTranslation) return
+    messages.forEach((msg) => {
+      const isMe = msg.sender_id === myUserId
+      // 상대방 메시지이고 아직 번역 안됨
+      if (!isMe && !translations[msg.id] && !translating[msg.id]) {
+        translateMessage(msg)
+      }
+    })
+  }, [messages, needsTranslation])
+
+  async function translateMessage(msg: Message) {
+    setTranslating(prev => ({ ...prev, [msg.id]: true }))
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '', body: msg.body, targetLang: myLanguage }),
+      })
+      const data = await res.json()
+      if (data.body && data.body !== msg.body) {
+        setTranslations(prev => ({ ...prev, [msg.id]: data.body }))
+      }
+    } catch {
+      // 번역 실패 시 원문 표시
+    } finally {
+      setTranslating(prev => ({ ...prev, [msg.id]: false }))
+    }
+  }
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, translations])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -73,6 +113,7 @@ export default function DirectChatModal({
       await push(chatRef, {
         sender_id: myUserId,
         body,
+        lang: myLanguage,
         created_at: Date.now(),
       })
     } finally {
@@ -87,9 +128,10 @@ export default function DirectChatModal({
 
   function formatTime(ts: number) {
     if (!ts) return ''
-    const d = new Date(ts)
-    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
   }
+
+  const LANG_LABEL: Record<Language, string> = { ko: '한국어', en: 'English', zh: '中文' }
 
   return (
     <div
@@ -127,10 +169,16 @@ export default function DirectChatModal({
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text1)' }}>
               {targetFlag} {targetUsername}
             </div>
-            <div style={{ fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
-              온라인
-            </div>
+            {needsTranslation ? (
+              <div style={{ fontSize: 11, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                🌐 {LANG_LABEL[targetLanguage]} → {LANG_LABEL[myLanguage]} 자동번역
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+                온라인
+              </div>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -160,6 +208,9 @@ export default function DirectChatModal({
           )}
           {messages.map((msg) => {
             const isMe = msg.sender_id === myUserId
+            const translatedBody = !isMe && needsTranslation ? translations[msg.id] : null
+            const isTranslating = !isMe && needsTranslation && translating[msg.id]
+
             return (
               <div
                 key={msg.id}
@@ -169,7 +220,6 @@ export default function DirectChatModal({
                   alignItems: 'flex-end', gap: 8,
                 }}
               >
-                {/* 상대방 아바타 */}
                 {!isMe && (
                   <div style={{
                     width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
@@ -186,9 +236,20 @@ export default function DirectChatModal({
                     background: isMe ? 'var(--accent)' : 'var(--surface2)',
                     color: isMe ? '#fff' : 'var(--text1)',
                     fontSize: 14, lineHeight: 1.5, wordBreak: 'break-word',
+                    opacity: isTranslating ? 0.6 : 1,
                   }}>
-                    {msg.body}
+                    {isTranslating ? (
+                      <span style={{ fontSize: 12, color: 'var(--text3)' }}>번역 중...</span>
+                    ) : (
+                      translatedBody ?? msg.body
+                    )}
                   </div>
+                  {/* 번역됨 표시 + 원문 토글 */}
+                  {translatedBody && (
+                    <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 1 }}>
+                      🌐 번역됨 · 원문: {msg.body}
+                    </div>
+                  )}
                   <div style={{ fontSize: 10, color: 'var(--text3)' }}>
                     {formatTime(msg.created_at)}
                   </div>
@@ -207,7 +268,7 @@ export default function DirectChatModal({
           <input
             ref={inputRef}
             type="text"
-            placeholder="메시지를 입력하세요..."
+            placeholder={`메시지 입력 (${LANG_LABEL[myLanguage]})`}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}

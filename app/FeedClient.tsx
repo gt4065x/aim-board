@@ -64,7 +64,7 @@ function flagToLang(flag: string): Language {
 interface HotPost { id: string; title: string; language: string; likes: number }
 interface CountryCount { flag: string; count: number }
 export interface OnlineUser {
-  user_id: string; username: string; flag: string; avatar_letter: string;
+  user_id: string; username: string; flag: string; avatar_letter: string; language?: string;
 }
 
 interface Props { user: User }
@@ -210,16 +210,18 @@ function FeedInner({ user }: Props) {
     const avatarLetter = profile?.avatar_letter || (user.email?.[0]?.toUpperCase() ?? 'U')
 
     onDisconnect(userRef).remove().catch(console.error)
+    const language = profile?.language || 'ko'
     set(userRef, {
       user_id: user.uid,
       username,
       flag,
       avatar_letter: avatarLetter,
+      language,
       onlineAt: Date.now()
     }).catch((err) => console.error('presence set 실패 (RTDB 규칙 확인 필요):', err))
 
     // 본인을 항상 목록에 포함시켜 즉시 반영
-    const selfUser: OnlineUser = { user_id: user.uid, username, flag, avatar_letter: avatarLetter }
+    const selfUser: OnlineUser = { user_id: user.uid, username, flag, avatar_letter: avatarLetter, language }
 
     const presenceRef = ref(rtdb, 'presence')
     const unsubPresence = onValue(
@@ -435,10 +437,12 @@ function FeedInner({ user }: Props) {
           myUserId={user.uid}
           myUsername={profile.username}
           myAvatarLetter={profile.avatar_letter}
+          myLanguage={profile.language}
           targetUserId={chatTarget.user_id}
           targetUsername={chatTarget.username}
           targetAvatarLetter={chatTarget.avatar_letter}
           targetFlag={chatTarget.flag}
+          targetLanguage={(chatTarget.language || 'ko') as 'ko' | 'en' | 'zh'}
           onClose={() => setChatTarget(null)}
         />
       )}
