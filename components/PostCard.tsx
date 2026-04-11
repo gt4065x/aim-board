@@ -5,7 +5,8 @@ import { Post, Category } from '@/lib/types'
 import { useToast } from './Toast'
 import PostDetailModal from './PostDetailModal'
 import { collection, query, where, orderBy, getDocs, addDoc, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot } from 'firebase/firestore'
-import { db } from '@/lib/firebase/client'
+import { getIdToken } from 'firebase/auth'
+import { db, auth } from '@/lib/firebase/client'
 
 const CATEGORY_INFO: Record<Category, { label: string; cls: string }> = {
   free: { label: '자유', cls: 'cat-free' },
@@ -104,10 +105,8 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
 
   async function handleDelete() {
     try {
-      if (isAdmin && !isOwner) {
-        // 어드민이 타인 글 삭제: 서버 API 경유
-        const { getIdToken } = await import('firebase/auth')
-        const { auth } = await import('@/lib/firebase/client')
+      if (isAdmin) {
+        // 어드민 삭제: Admin SDK 서버 API 경유 (Firestore 규칙 우회)
         const currentUser = auth.currentUser
         if (!currentUser) throw new Error('로그인 상태가 아닙니다.')
         const idToken = await getIdToken(currentUser)
