@@ -89,9 +89,11 @@ function FeedInner({ user }: Props) {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [showMobileOnline, setShowMobileOnline] = useState(false)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [chatTarget, setChatTarget] = useState<OnlineUser | null>(null)
   const [isDark, setIsDark] = useState(true)
   const openingModalRef = useRef(false)
+  const mobileMenuRef = useRef<HTMLDivElement>(null)
 
   const [uiLang, setUiLang] = useState<Language>('ko')
   const [loading, setLoading] = useState(true)
@@ -101,6 +103,21 @@ function FeedInner({ user }: Props) {
     const saved = typeof window !== 'undefined' && window.localStorage?.getItem?.('theme')
     if (saved === 'light') setIsDark(false)
   }, [])
+
+  useEffect(() => {
+    if (!showMobileMenu) return
+    function handleOutside(e: MouseEvent | TouchEvent) {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+        setShowMobileMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    document.addEventListener('touchstart', handleOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleOutside)
+      document.removeEventListener('touchstart', handleOutside)
+    }
+  }, [showMobileMenu])
 
   useEffect(() => {
     const html = document.documentElement
@@ -310,37 +327,67 @@ function FeedInner({ user }: Props) {
           ))}
         </div>
         <div className="topbar-actions">
+          {/* 다크모드 토글 - 데스크톱 전용 */}
           <button
             onClick={() => setIsDark(d => !d)}
             title={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
-            className="topbar-icon-btn"
+            className="topbar-icon-btn desktop-only"
           >
             {isDark ? '☀️' : '🌙'}
           </button>
-          {/* 모바일 전용 버튼 */}
-          <button
-            className="topbar-icon-btn mobile-only"
-            title="온라인 사용자"
-            onClick={() => setShowMobileOnline(v => !v)}
-          >
-            👥
-          </button>
-          {(profile?.role === 'admin' || profile?.role === 'staff') && (
+          {/* 모바일 전용 ··· 드롭다운 메뉴 */}
+          <div className="mobile-overflow-menu mobile-only" ref={mobileMenuRef}>
             <button
-              className="topbar-icon-btn mobile-only"
-              title="어드민 패널"
-              onClick={() => setShowAdminPanel(true)}
+              className="topbar-icon-btn"
+              onClick={() => setShowMobileMenu(v => !v)}
+              aria-label="메뉴"
             >
-              🛡️
+              ···
             </button>
-          )}
-          <button
-            className="topbar-icon-btn mobile-only"
-            title="로그아웃"
-            onClick={signOut}
-          >
-            🚪
-          </button>
+            {showMobileMenu && (
+              <div className="mobile-dropdown">
+                {/* 언어 선택 */}
+                <div className="mobile-dropdown-langs">
+                  {(['ko', 'en', 'zh'] as const).map(l => (
+                    <button
+                      key={l}
+                      className={`mobile-dd-lang-btn ${uiLang === l ? 'active' : ''}`}
+                      onClick={() => { setUiLang(l); setShowMobileMenu(false) }}
+                    >
+                      {l === 'ko' ? '🇰🇷 KO' : l === 'en' ? '🇺🇸 EN' : '🇨🇳 ZH'}
+                    </button>
+                  ))}
+                </div>
+                <div className="mobile-dropdown-divider" />
+                {/* 밝기 토글 */}
+                <button className="mobile-dropdown-item" onClick={() => { setIsDark(d => !d); setShowMobileMenu(false) }}>
+                  {isDark ? '☀️' : '🌙'}&nbsp;
+                  {isDark
+                    ? (uiLang === 'ko' ? '라이트 모드' : uiLang === 'zh' ? '浅色模式' : 'Light Mode')
+                    : (uiLang === 'ko' ? '다크 모드' : uiLang === 'zh' ? '深色模式' : 'Dark Mode')}
+                </button>
+                {/* 온라인 사용자 */}
+                <button className="mobile-dropdown-item" onClick={() => { setShowMobileOnline(true); setShowMobileMenu(false) }}>
+                  👥&nbsp;{uiLang === 'ko' ? '온라인 사용자' : uiLang === 'zh' ? '在线用户' : 'Online Users'}
+                </button>
+                {/* 어드민 패널 (관리자만) */}
+                {(profile?.role === 'admin' || profile?.role === 'staff') && (
+                  <button className="mobile-dropdown-item" onClick={() => { setShowAdminPanel(true); setShowMobileMenu(false) }}>
+                    🛡️&nbsp;{uiLang === 'ko' ? '어드민 패널' : uiLang === 'zh' ? '管理面板' : 'Admin Panel'}
+                  </button>
+                )}
+                {/* 프로필 설정 */}
+                <button className="mobile-dropdown-item" onClick={() => { setShowProfileModal(true); setShowMobileMenu(false) }}>
+                  👤&nbsp;{uiLang === 'ko' ? '프로필 설정' : uiLang === 'zh' ? '个人设置' : 'Profile Settings'}
+                </button>
+                <div className="mobile-dropdown-divider" />
+                {/* 로그아웃 */}
+                <button className="mobile-dropdown-item mobile-dropdown-item--danger" onClick={signOut}>
+                  🚪&nbsp;{t.signOut}
+                </button>
+              </div>
+            )}
+          </div>
           <NotificationBell
             userId={user.uid}
             userPosts={posts.filter(p => p.user_id === user.uid).map(p => ({ id: p.id, title: p.title }))}

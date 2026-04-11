@@ -224,6 +224,20 @@ body {
   display: none;
 }
 
+/* 모바일에서 데스크탑 전용 요소 숨김 (기본은 표시) */
+.desktop-only {
+  display: flex;
+}
+
+/* 모바일 오버플로우 메뉴 컨테이너 */
+.mobile-overflow-menu {
+  position: relative;
+}
+
+.mobile-dropdown {
+  display: none;
+}
+
 .topbar-actions {
   display: flex;
   gap: 8px;
@@ -1635,6 +1649,86 @@ body {
     display: flex;
   }
 
+  .desktop-only {
+    display: none !important;
+  }
+
+  /* ── Mobile overflow dropdown ── */
+  .mobile-dropdown {
+    display: block;
+    position: fixed;
+    top: 56px;
+    right: 8px;
+    background: var(--surface1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px;
+    min-width: 210px;
+    z-index: 9999;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  .mobile-dropdown-langs {
+    display: flex;
+    gap: 6px;
+    padding: 2px 0 8px;
+  }
+
+  .mobile-dd-lang-btn {
+    flex: 1;
+    padding: 7px 4px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.5px;
+    touch-action: manipulation;
+  }
+
+  .mobile-dd-lang-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .mobile-dropdown-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 0;
+  }
+
+  .mobile-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 11px 12px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text1);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    font-family: 'Noto Sans KR', sans-serif;
+    transition: background 0.15s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-dropdown-item:active {
+    background: var(--surface2);
+  }
+
+  .mobile-dropdown-item--danger {
+    color: #ef4444;
+  }
+
   .logo-sub {
     display: none;
   }
@@ -1765,30 +1859,42 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     position: fixed;
-    bottom: 24px;
-    right: 20px;
-    width: 56px;
-    height: 56px;
+    bottom: 28px;
+    right: 16px;
+    height: 52px;
+    padding: 0 20px;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     border: none;
-    border-radius: 50%;
-    font-size: 22px;
+    border-radius: 26px;
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
     cursor: pointer;
     z-index: 500;
-    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.5);
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.55);
     transition: transform .2s, box-shadow .2s, opacity .2s;
-    /* 터치 최적화 */
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
     pointer-events: auto;
+    white-space: nowrap;
+  }
+
+  .mobile-fab::after {
+    content: '글쓰기';
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Noto Sans KR', sans-serif;
+    letter-spacing: 0.3px;
   }
 
   .mobile-fab.hidden {
     opacity: 0;
     pointer-events: none;
+    transform: scale(0.85);
   }
 
   .mobile-fab:active {
