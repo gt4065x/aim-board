@@ -26,6 +26,7 @@ export interface Post {
   likes?: { count: number }[]
   comments?: { count: number }[]
   user_liked?: boolean
+  _likes?: number
 }
 
 export interface Comment {

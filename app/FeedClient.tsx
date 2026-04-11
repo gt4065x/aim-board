@@ -181,13 +181,13 @@ function FeedInner({ user }: Props) {
         if (pid) likesMap[pid] = (likesMap[pid] || 0) + 1
       })
       setPosts(prev => {
-        const top = [...prev]
-          .map(p => ({ ...p, _likes: likesMap[p.id] || 0 }))
+        const withLikes = prev.map(p => ({ ...p, _likes: likesMap[p.id] || 0 }))
+        const top = [...withLikes]
           .sort((a, b) => b._likes - a._likes)
           .slice(0, 5)
           .map(p => ({ id: p.id, title: p.title, language: p.language, likes: p._likes }))
         setHotPosts(top)
-        return prev
+        return withLikes
       })
     })
 
@@ -266,10 +266,15 @@ function FeedInner({ user }: Props) {
       return true
     })
     .sort((a, b) => {
-      const dateA = new Date(a.created_at || 0).getTime()
-      const dateB = new Date(b.created_at || 0).getTime()
       if (a.pinned && !b.pinned) return -1
       if (!a.pinned && b.pinned) return 1
+      if (sortBy === 'hot') {
+        const la = a._likes ?? 0
+        const lb = b._likes ?? 0
+        if (lb !== la) return lb - la
+      }
+      const dateA = new Date(a.created_at || 0).getTime()
+      const dateB = new Date(b.created_at || 0).getTime()
       return dateB - dateA
     })
 
