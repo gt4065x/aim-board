@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { initializeAuth, getAuth, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 import { getStorage } from 'firebase/storage';
@@ -14,8 +14,22 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+const isServer = typeof window === 'undefined';
+
+let app: ReturnType<typeof initializeApp>;
+let auth: ReturnType<typeof getAuth>;
+
+if (!getApps().length) {
+  app = initializeApp(firebaseConfig);
+  // SSR 환경에서 localStorage 접근 방지: in-memory persistence 사용
+  auth = initializeAuth(app, {
+    persistence: isServer ? inMemoryPersistence : browserLocalPersistence
+  });
+} else {
+  app = getApp();
+  auth = getAuth(app);
+}
+
 const db = getFirestore(app);
 const rtdb = getDatabase(app);
 const storage = getStorage(app);

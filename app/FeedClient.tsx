@@ -85,23 +85,26 @@ function FeedInner({ user }: Props) {
 
   const [showModal, setShowModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window === 'undefined') return true
-    return localStorage.getItem('theme') !== 'light'
-  })
+  const [isDark, setIsDark] = useState(true)
   const openingModalRef = useRef(false)
 
   const [uiLang, setUiLang] = useState<Language>('ko')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // 초기 테마 로드 (클라이언트 전용)
+    const saved = typeof window !== 'undefined' && window.localStorage?.getItem?.('theme')
+    if (saved === 'light') setIsDark(false)
+  }, [])
+
+  useEffect(() => {
     const html = document.documentElement
     if (isDark) {
       html.classList.remove('light')
-      localStorage.setItem('theme', 'dark')
+      window.localStorage?.setItem?.('theme', 'dark')
     } else {
       html.classList.add('light')
-      localStorage.setItem('theme', 'light')
+      window.localStorage?.setItem?.('theme', 'light')
     }
   }, [isDark])
 

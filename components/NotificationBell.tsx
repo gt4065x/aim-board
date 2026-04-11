@@ -38,11 +38,13 @@ function timeAgo(dateStr: string) {
 export default function NotificationBell({ userId, userPosts }: Props) {
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [open, setOpen] = useState(false)
-  const [lastSeen, setLastSeen] = useState<number>(() => {
-    if (typeof window === 'undefined') return 0
-    return parseInt(localStorage.getItem(`notif_seen_${userId}`) || '0')
-  })
+  const [lastSeen, setLastSeen] = useState<number>(0)
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const val = window.localStorage?.getItem?.(`notif_seen_${userId}`)
+    if (val) setLastSeen(parseInt(val))
+  }, [userId])
   const profileCache = useRef<Record<string, { username: string; flag: string }>>({})
 
   async function getProfile(uid: string) {
@@ -133,7 +135,7 @@ export default function NotificationBell({ userId, userPosts }: Props) {
     if (willOpen && unread > 0) {
       const now = Date.now()
       setLastSeen(now)
-      localStorage.setItem(`notif_seen_${userId}`, String(now))
+      window.localStorage?.setItem?.(`notif_seen_${userId}`, String(now))
     }
   }
 

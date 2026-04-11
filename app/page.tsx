@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { auth } from '@/lib/firebase/client'
-import { onAuthStateChanged, User } from 'firebase/auth'
-import FeedClient from './FeedClient'
+import dynamic from 'next/dynamic'
+import type { User } from 'firebase/auth'
+
+const FeedClient = dynamic(() => import('./FeedClient'), { ssr: false })
 
 export default function HomePage() {
   const router = useRouter()
@@ -12,15 +13,20 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u)
-        setLoading(false)
-      } else {
-        router.replace('/auth')
-      }
+    let unsub: () => void
+    import('@/lib/firebase/client').then(({ auth }) => {
+      import('firebase/auth').then(({ onAuthStateChanged }) => {
+        unsub = onAuthStateChanged(auth, (u) => {
+          if (u) {
+            setUser(u)
+            setLoading(false)
+          } else {
+            router.replace('/auth')
+          }
+        })
+      })
     })
-    return () => unsub()
+    return () => { unsub?.() }
   }, [router])
 
   if (loading || !user) {
