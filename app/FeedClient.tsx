@@ -13,6 +13,7 @@ import RightPanel from '@/components/RightPanel'
 import ProfileSettingsModal from '@/components/ProfileSettingsModal'
 import NotificationBell from '@/components/NotificationBell'
 import AdminPanel from '@/components/AdminPanel'
+import DirectChatModal from '@/components/DirectChatModal'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_META = [
@@ -87,6 +88,7 @@ function FeedInner({ user }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [chatTarget, setChatTarget] = useState<OnlineUser | null>(null)
   const [isDark, setIsDark] = useState(true)
   const openingModalRef = useRef(false)
 
@@ -404,7 +406,10 @@ function FeedInner({ user }: Props) {
         </div>
       </main>
 
-      <RightPanel stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} countryDist={countryDist} />
+      <RightPanel
+        stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} countryDist={countryDist}
+        onUserClick={(u) => { if (u.user_id !== user.uid) setChatTarget(u) }}
+      />
 
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
         ✏️
@@ -420,6 +425,18 @@ function FeedInner({ user }: Props) {
         />
       )}
       {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
+      {chatTarget && profile && (
+        <DirectChatModal
+          myUserId={user.uid}
+          myUsername={profile.username}
+          myAvatarLetter={profile.avatar_letter}
+          targetUserId={chatTarget.user_id}
+          targetUsername={chatTarget.username}
+          targetAvatarLetter={chatTarget.avatar_letter}
+          targetFlag={chatTarget.flag}
+          onClose={() => setChatTarget(null)}
+        />
+      )}
     </div>
   )
 }

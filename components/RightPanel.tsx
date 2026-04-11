@@ -77,12 +77,13 @@ function useAnimCount(target: number) {
 }
 
 export default function RightPanel({
-  stats, hotPosts, onlineUsers, countryDist
+  stats, hotPosts, onlineUsers, countryDist, onUserClick
 }: {
   stats: Stats
   hotPosts: HotPost[]
   onlineUsers: OnlineUser[]
   countryDist: CountryCount[]
+  onUserClick?: (user: OnlineUser) => void
 }) {
   const posts   = useAnimCount(stats.posts)
   const members = useAnimCount(stats.members)
@@ -183,8 +184,12 @@ export default function RightPanel({
                 <div
                   key={u.user_id}
                   className={`mini-av ${cls}`}
-                  title={u.username}
-                  style={!cls ? { background: 'linear-gradient(135deg,#f77f00,#d62828)' } : {}}
+                  title={`${u.username} — 클릭해서 채팅`}
+                  onClick={() => onUserClick?.(u)}
+                  style={{
+                    ...(!cls ? { background: 'linear-gradient(135deg,#f77f00,#d62828)' } : {}),
+                    cursor: onUserClick ? 'pointer' : 'default',
+                  }}
                 >
                   {u.avatar_letter}
                 </div>

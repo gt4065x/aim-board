@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+    "dms": {
+      "$chatId": {
+        ".read": "auth != null && ($chatId.contains(auth.uid))",
+        ".write": "auth != null && ($chatId.contains(auth.uid))"
+      }
+    }
+  }
+}
