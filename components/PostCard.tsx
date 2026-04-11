@@ -105,8 +105,14 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
 
   async function handleDelete() {
     try {
-      if (isAdmin) {
-        // 어드민 삭제: Admin SDK 서버 API 경유 (Firestore 규칙 우회)
+      // 먼저 일반 삭제 시도 (본인 글)
+      // 권한 부족 에러 시 어드민 API로 폴백
+      try {
+        await deleteDoc(doc(db, 'posts', post.id))
+      } catch (permErr: any) {
+        if (permErr?.code !== 'permission-denied') throw permErr
+
+        // 어드민 API 경유 삭제
         const currentUser = auth.currentUser
         if (!currentUser) throw new Error('로그인 상태가 아닙니다.')
         const idToken = await getIdToken(currentUser)
@@ -118,8 +124,6 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error ?? '삭제 실패')
-      } else {
-        await deleteDoc(doc(db, 'posts', post.id))
       }
       setDeleted(true)
       showToast('✅', '게시글이 삭제되었습니다.')
