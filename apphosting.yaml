@@ -44,7 +44,7 @@ env:
     availability:
       - BUILD
       - RUNTIME
-  - variable: OPENAI_API_KEY
+  - variable: CUSTOM_AI_API_KEY
     secret: OPENAI_API_KEY
     availability:
       - RUNTIME

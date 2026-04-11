@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const rawApiKey = process.env.OPENAI_API_KEY
+    const rawApiKey = process.env.CUSTOM_AI_API_KEY
     const apiKey = rawApiKey?.trim()
 
     console.log('[translate] env check:', {
