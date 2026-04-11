@@ -149,7 +149,11 @@ function FeedInner({ user }: Props) {
     const q = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50))
     const unsubPosts = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Post))
-      setPosts(docs)
+      setPosts(prev => {
+        const likesMap: Record<string, number> = {}
+        prev.forEach(p => { if (p._likes) likesMap[p.id] = p._likes })
+        return docs.map(d => ({ ...d, _likes: likesMap[d.id] ?? 0 }))
+      })
 
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
