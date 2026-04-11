@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       let detail = ''
       try {
         detail = JSON.parse(err)?.error?.message ?? ''
-      } catch {}
+      } catch { }
       return NextResponse.json(
         { error: `번역 요청 실패 (${response.status})${detail ? ': ' + detail : ''}` },
         { status: 502 }
