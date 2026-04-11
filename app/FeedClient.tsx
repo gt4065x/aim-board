@@ -399,6 +399,7 @@ function FeedInner({ user }: Props) {
               <PostCard
                 key={post.id} post={post} userId={user.uid} uiLang={uiLang}
                 currentUserProfile={profile ? { username: profile.username, flag: profile.flag, avatar_letter: profile.avatar_letter } : null}
+                currentUserRole={profile?.role}
                 animDelay={Math.min(i * 0.05, 0.3)}
               />
             ))

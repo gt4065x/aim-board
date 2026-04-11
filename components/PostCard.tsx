@@ -73,10 +73,11 @@ interface Props {
   userId: string | null
   uiLang?: 'ko' | 'en' | 'zh'
   currentUserProfile?: CurrentUserProfile | null
+  currentUserRole?: string
   animDelay?: number
 }
 
-export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfile, animDelay = 0 }: Props) {
+export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfile, currentUserRole, animDelay = 0 }: Props) {
   const { showToast } = useToast()
 
   const [liked, setLiked] = useState(post.user_liked ?? false)
@@ -90,6 +91,7 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
   const [deleted, setDeleted] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const isOwner = userId === post.user_id
+  const isAdmin = currentUserRole === 'admin'
 
   useEffect(() => {
     if (!showMenu) return
@@ -346,7 +348,7 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
           <div className="post-time">{timeAgo(post.created_at)}</div>
         </div>
         <span className={`post-category ${catInfo.cls}`}>{catInfo.label}</span>
-        {isOwner && (
+        {(isOwner || isAdmin) && (
           <div ref={menuRef} style={{ position: 'relative', marginLeft: 'auto' }}>
             <button onClick={() => setShowMenu(m => !m)} style={{
               background: 'none', border: 'none', cursor: 'pointer',
@@ -359,13 +361,15 @@ export default function PostCard({ post, userId, uiLang = 'ko', currentUserProfi
                 borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
                 overflow: 'hidden', minWidth: 110,
               }}>
-                <button onClick={() => { setEditing(true); setShowMenu(false) }} style={{
-                  display: 'block', width: '100%', padding: '10px 16px',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text1)', fontSize: 13, textAlign: 'left',
-                }}>✏️ 수정</button>
+                {isOwner && (
+                  <button onClick={() => { setEditing(true); setShowMenu(false) }} style={{
+                    display: 'block', width: '100%', padding: '10px 16px',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--text1)', fontSize: 13, textAlign: 'left',
+                  }}>✏️ 수정</button>
+                )}
                 {confirmDelete ? (
-                  <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ padding: '8px 12px', borderTop: isOwner ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>정말 삭제할까요?</div>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={(e) => { e.stopPropagation(); setShowMenu(false); setConfirmDelete(false); handleDelete() }} style={{
