@@ -88,6 +88,7 @@ function FeedInner({ user }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
+  const [showMobileOnline, setShowMobileOnline] = useState(false)
   const [chatTarget, setChatTarget] = useState<OnlineUser | null>(null)
   const [isDark, setIsDark] = useState(true)
   const openingModalRef = useRef(false)
@@ -421,6 +422,97 @@ function FeedInner({ user }: Props) {
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
         ✏️
       </button>
+
+      {/* 모바일 전용 좌측 FAB: 온라인 유저 + 어드민 */}
+      <div className="mobile-side-fabs">
+        <button
+          className="mobile-side-fab"
+          style={{ background: '#22c55e', color: '#fff' }}
+          onClick={() => setShowMobileOnline(v => !v)}
+          title="온라인 사용자"
+        >
+          👥
+        </button>
+        {(profile?.role === 'admin' || profile?.role === 'staff') && (
+          <button
+            className="mobile-side-fab"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+            onClick={() => setShowAdminPanel(true)}
+            title="어드민 패널"
+          >
+            🛡️
+          </button>
+        )}
+      </div>
+
+      {/* 모바일 온라인 유저 시트 */}
+      {showMobileOnline && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9000,
+            background: 'rgba(0,0,0,0.5)',
+          }}
+          onClick={() => setShowMobileOnline(false)}
+        >
+          <div
+            style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              background: 'var(--surface1)', borderRadius: '20px 20px 0 0',
+              padding: '20px 20px 40px',
+              maxHeight: '70vh', overflowY: 'auto',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ width: 40, height: 4, background: 'var(--border2)', borderRadius: 2, margin: '0 auto 16px' }} />
+            <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text1)', marginBottom: 4 }}>
+              👥 지금 온라인 — {onlineUsers.length}명
+            </div>
+            <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 16 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block', marginRight: 5 }} />
+              실시간 접속 중
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {onlineUsers.map(u => (
+                <div
+                  key={u.user_id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 12px', borderRadius: 12,
+                    background: 'var(--surface2)',
+                    cursor: u.user_id !== user.uid ? 'pointer' : 'default',
+                  }}
+                  onClick={() => {
+                    if (u.user_id === user.uid) return
+                    setShowMobileOnline(false)
+                    setChatTarget(u)
+                  }}
+                >
+                  <div style={{
+                    width: 36, height: 36, borderRadius: '50%',
+                    background: u.flag === '🇰🇷' ? 'linear-gradient(135deg,#3b82f6,#1d4ed8)'
+                      : u.flag === '🇺🇸' ? 'linear-gradient(135deg,#ef4444,#991b1b)'
+                      : u.flag === '🇨🇳' ? 'linear-gradient(135deg,#f59e0b,#b45309)'
+                      : 'linear-gradient(135deg,#f77f00,#d62828)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 700, fontSize: 15, color: '#fff', flexShrink: 0,
+                  }}>
+                    {u.avatar_letter}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text1)' }}>
+                      {u.flag} {u.username}
+                      {u.user_id === user.uid && <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 6 }}>(나)</span>}
+                    </div>
+                  </div>
+                  {u.user_id !== user.uid && (
+                    <span style={{ fontSize: 12, color: 'var(--accent)' }}>💬 채팅</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && <WriteModal userId={user.uid} userRole={profile?.role} uiLang={uiLang} onClose={closeModal} onPosted={() => {}} />}
       {showProfileModal && profile && (
