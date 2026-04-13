@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ref, push, onValue, off } from 'firebase/database'
+import { ref, push, onValue, off, set, remove } from 'firebase/database'
 import { rtdb } from '@/lib/firebase/client'
 import type { Language } from '@/lib/types'
 
@@ -17,6 +17,7 @@ interface Props {
   myUserId: string
   myUsername: string
   myAvatarLetter: string
+  myFlag: string
   myLanguage: Language
   targetUserId: string
   targetUsername: string
@@ -31,7 +32,7 @@ function getChatId(uid1: string, uid2: string) {
 }
 
 export default function DirectChatModal({
-  myUserId, myAvatarLetter, myLanguage,
+  myUserId, myUsername, myAvatarLetter, myFlag, myLanguage,
   targetUserId, targetUsername, targetAvatarLetter, targetFlag, targetLanguage,
   onClose,
 }: Props) {
@@ -47,6 +48,22 @@ export default function DirectChatModal({
 
   const chatId = getChatId(myUserId, targetUserId)
   const chatRef = ref(rtdb, `dms/${chatId}`)
+  const inviteRef = ref(rtdb, `chat_invites/${targetUserId}`)
+
+  // 채팅창 열릴 때 상대방에게 초대 알림 전송, 닫힐 때 제거
+  useEffect(() => {
+    set(inviteRef, {
+      from_uid: myUserId,
+      from_username: myUsername,
+      from_avatar: myAvatarLetter,
+      from_flag: myFlag,
+      chat_id: chatId,
+      at: Date.now(),
+    }).catch(() => {})
+    return () => {
+      remove(inviteRef).catch(() => {})
+    }
+  }, [chatId])
 
   useEffect(() => {
     const listener = onValue(chatRef, (snap) => {

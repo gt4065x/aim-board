@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, signOut as firebaseSignOut } from 'firebase/auth'
 import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where, setDoc } from 'firebase/firestore'
-import { ref, onValue, set, onDisconnect, remove } from 'firebase/database'
+import { ref, onValue, set, onDisconnect, remove, off } from 'firebase/database'
 import { auth, db, rtdb } from '@/lib/firebase/client'
 import { Post, Profile, Category, Language } from '@/lib/types'
 import PostCard from '@/components/PostCard'
@@ -259,6 +259,27 @@ function FeedInner({ user }: Props) {
       unsubPresence()
     }
   }, [user.uid, profile?.username, profile?.flag, profile?.avatar_letter])
+
+  // 4. 채팅 초대 수신 리스너
+  useEffect(() => {
+    const inviteRef = ref(rtdb, `chat_invites/${user.uid}`)
+    const listener = onValue(inviteRef, (snap) => {
+      const data = snap.val()
+      if (!data) return
+      // 이미 해당 상대방과 채팅 중이면 무시
+      setChatTarget(prev => {
+        if (prev?.user_id === data.from_uid) return prev
+        return {
+          user_id: data.from_uid,
+          username: data.from_username,
+          avatar_letter: data.from_avatar,
+          flag: data.from_flag,
+          language: data.from_language,
+        }
+      })
+    })
+    return () => off(inviteRef, 'value', listener)
+  }, [user.uid])
 
   const t = UI[uiLang]
   const navItems = NAV_META.map((m, i) => ({ ...m, label: t.nav[i] }))
@@ -573,6 +594,7 @@ function FeedInner({ user }: Props) {
           myUserId={user.uid}
           myUsername={profile.username}
           myAvatarLetter={profile.avatar_letter}
+          myFlag={profile.flag}
           myLanguage={profile.language}
           targetUserId={chatTarget.user_id}
           targetUsername={chatTarget.username}
