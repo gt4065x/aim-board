@@ -3,8 +3,10 @@
 :root {
   --bg: #0e0f14;
   --surface: #16171e;
+  --surface1: #1a1b24;
   --surface2: #1e1f28;
   --border: rgba(255, 255, 255, 0.08);
+  --border1: rgba(255, 255, 255, 0.10);
   --border2: rgba(255, 255, 255, 0.13);
   --text: #e8e6f0;
   --text1: #e8e6f0;
@@ -22,8 +24,10 @@
 html.light {
   --bg: #f5f0e8;
   --surface: #faf7f2;
+  --surface1: #f2ede5;
   --surface2: #ede8df;
   --border: rgba(0, 0, 0, 0.09);
+  --border1: rgba(0, 0, 0, 0.12);
   --border2: rgba(0, 0, 0, 0.15);
   --text: #2c2a35;
   --text1: #2c2a35;
