@@ -39,9 +39,10 @@ export default function DirectChatModal({
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  // msgId → 번역된 텍스트 캐시
   const [translations, setTranslations] = useState<Record<string, string>>({})
-  const [translating, setTranslating] = useState<Record<string, boolean>>({})
+  const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set())
+  // ref로 "이미 요청한 ID" 추적 → 스냅샷 문제 없이 항상 최신 상태 참조
+  const requestedRef = useRef<Set<string>>(new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const needsTranslation = myLanguage !== targetLanguage
@@ -65,37 +66,8 @@ export default function DirectChatModal({
     }
   }, [chatId])
 
-  useEffect(() => {
-    const listener = onValue(chatRef, (snap) => {
-      const val = snap.val()
-      if (!val) { setMessages([]); return }
-      const msgs: Message[] = Object.entries(val).map(([id, m]: [string, any]) => ({
-        id,
-        sender_id: m.sender_id,
-        body: m.body,
-        lang: m.lang ?? 'ko',
-        created_at: m.created_at ?? 0,
-      }))
-      msgs.sort((a, b) => a.created_at - b.created_at)
-      setMessages(msgs)
-    })
-    return () => off(chatRef, 'value', listener)
-  }, [chatId])
-
-  // 번역이 필요한 메시지 자동 번역
-  useEffect(() => {
-    if (!needsTranslation) return
-    messages.forEach((msg) => {
-      const isMe = msg.sender_id === myUserId
-      // 상대방 메시지이고 아직 번역 안됨
-      if (!isMe && !translations[msg.id] && !translating[msg.id]) {
-        translateMessage(msg)
-      }
-    })
-  }, [messages, needsTranslation])
-
   async function translateMessage(msg: Message) {
-    setTranslating(prev => ({ ...prev, [msg.id]: true }))
+    setTranslatingIds(prev => new Set(prev).add(msg.id))
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
@@ -109,9 +81,36 @@ export default function DirectChatModal({
     } catch {
       // 번역 실패 시 원문 표시
     } finally {
-      setTranslating(prev => ({ ...prev, [msg.id]: false }))
+      setTranslatingIds(prev => { const s = new Set(prev); s.delete(msg.id); return s })
     }
   }
+
+  useEffect(() => {
+    const listener = onValue(chatRef, (snap) => {
+      const val = snap.val()
+      if (!val) { setMessages([]); return }
+      const msgs: Message[] = Object.entries(val).map(([id, m]: [string, any]) => ({
+        id,
+        sender_id: m.sender_id,
+        body: m.body,
+        lang: m.lang ?? 'ko',
+        created_at: m.created_at ?? 0,
+      }))
+      msgs.sort((a, b) => a.created_at - b.created_at)
+      setMessages(msgs)
+
+      // 새 메시지 도착 즉시 번역 요청 (ref로 중복 방지)
+      if (needsTranslation) {
+        msgs.forEach((msg) => {
+          if (msg.sender_id !== myUserId && !requestedRef.current.has(msg.id)) {
+            requestedRef.current.add(msg.id)
+            translateMessage(msg)
+          }
+        })
+      }
+    })
+    return () => off(chatRef, 'value', listener)
+  }, [chatId, needsTranslation, myUserId, myLanguage])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -226,7 +225,7 @@ export default function DirectChatModal({
           {messages.map((msg) => {
             const isMe = msg.sender_id === myUserId
             const translatedBody = !isMe && needsTranslation ? translations[msg.id] : null
-            const isTranslating = !isMe && needsTranslation && translating[msg.id]
+            const isTranslating = !isMe && needsTranslation && translatingIds.has(msg.id)
 
             return (
               <div
