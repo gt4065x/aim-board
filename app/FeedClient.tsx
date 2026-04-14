@@ -241,13 +241,31 @@ function FeedInner({ user }: Props) {
     // 본인을 항상 목록에 포함시켜 즉시 반영
     const selfUser: OnlineUser = { user_id: user.uid, username, flag, avatar_letter: avatarLetter, language }
 
+    // 활동 감지 → onlineAt 갱신 (20분 타임아웃 기준)
+    const TIMEOUT_MS = 20 * 60 * 1000
+    let activityTimer: ReturnType<typeof setTimeout> | null = null
+    function refreshPresence() {
+      if (activityTimer) clearTimeout(activityTimer)
+      set(userRef, {
+        user_id: user.uid, username, flag, avatar_letter: avatarLetter, language,
+        onlineAt: Date.now()
+      }).catch(() => {})
+      // 20분 후 자동 제거
+      activityTimer = setTimeout(() => remove(userRef).catch(() => {}), TIMEOUT_MS)
+    }
+    const events = ['click', 'keydown', 'touchstart', 'scroll']
+    events.forEach(e => window.addEventListener(e, refreshPresence, { passive: true }))
+    refreshPresence() // 최초 등록 시 타이머 시작
+
     const presenceRef = ref(rtdb, 'presence')
     const unsubPresence = onValue(
       presenceRef,
       (snapshot) => {
         const data = snapshot.val()
+        const now = Date.now()
         const others: OnlineUser[] = data
-          ? (Object.values(data) as OnlineUser[]).filter(u => u.user_id !== user.uid)
+          ? (Object.values(data) as any[])
+              .filter(u => u.user_id !== user.uid && (now - (u.onlineAt ?? 0)) < TIMEOUT_MS)
           : []
         setOnlineUsers([selfUser, ...others])
       },
@@ -255,6 +273,8 @@ function FeedInner({ user }: Props) {
     )
 
     return () => {
+      if (activityTimer) clearTimeout(activityTimer)
+      events.forEach(e => window.removeEventListener(e, refreshPresence))
       remove(userRef).catch(() => {})
       unsubPresence()
     }
