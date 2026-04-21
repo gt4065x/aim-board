@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, signOut as firebaseSignOut } from 'firebase/auth'
-import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where, setDoc } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, setDoc } from 'firebase/firestore'
 import { ref, onValue, set, onDisconnect, remove, off, push } from 'firebase/database'
 import { auth, db, rtdb } from '@/lib/firebase/client'
 import { Post, Profile, Category, Language } from '@/lib/types'
@@ -55,11 +55,6 @@ const UI = {
   },
 }
 
-function flagToLang(flag: string): Language {
-  if (flag === '🇺🇸') return 'en'
-  if (flag === '🇨🇳') return 'zh'
-  return 'ko'
-}
 
 interface HotPost { id: string; title: string; language: string; likes: number }
 interface CountryCount { flag: string; count: number }
@@ -534,6 +529,7 @@ function FeedInner({ user }: Props) {
       <RightPanel
         stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} countryDist={countryDist}
         onUserClick={(u) => startChat(u)}
+        uiLang={uiLang}
       />
 
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
