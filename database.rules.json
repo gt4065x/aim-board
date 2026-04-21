@@ -17,6 +17,12 @@
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null"
       }
+    },
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }

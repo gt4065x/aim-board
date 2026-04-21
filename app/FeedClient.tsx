@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, signOut as firebaseSignOut } from 'firebase/auth'
 import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, getDocs, where, setDoc } from 'firebase/firestore'
-import { ref, onValue, set, onDisconnect, remove, off } from 'firebase/database'
+import { ref, onValue, set, onDisconnect, remove, off, push } from 'firebase/database'
 import { auth, db, rtdb } from '@/lib/firebase/client'
 import { Post, Profile, Category, Language } from '@/lib/types'
 import PostCard from '@/components/PostCard'
@@ -13,7 +13,7 @@ import RightPanel from '@/components/RightPanel'
 import ProfileSettingsModal from '@/components/ProfileSettingsModal'
 import NotificationBell from '@/components/NotificationBell'
 import AdminPanel from '@/components/AdminPanel'
-import DirectChatModal from '@/components/DirectChatModal'
+import GroupChatModal from '@/components/GroupChatModal'
 import { ToastProvider, useToast } from '@/components/Toast'
 
 const NAV_META = [
@@ -90,7 +90,7 @@ function FeedInner({ user }: Props) {
   const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [showMobileOnline, setShowMobileOnline] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const [chatTarget, setChatTarget] = useState<OnlineUser | null>(null)
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(true)
   const openingModalRef = useRef(false)
   const mobileMenuRef = useRef<HTMLDivElement>(null)
@@ -287,18 +287,9 @@ function FeedInner({ user }: Props) {
       inviteRef,
       (snap) => {
         const data = snap.val()
-        if (!data) return
-        setChatTarget(prev => {
-          if (prev?.user_id === data.from_uid) return prev
-          showToast('💬', `${data.from_username}님이 채팅을 요청했습니다`)
-          return {
-            user_id: data.from_uid,
-            username: data.from_username,
-            avatar_letter: data.from_avatar,
-            flag: data.from_flag,
-            language: data.from_language,
-          }
-        })
+        if (!data || !data.room_id) return
+        showToast('💬', `${data.from_username}님이 채팅을 요청했습니다`)
+        setActiveRoomId(data.room_id)
       },
       (err) => console.error('[chat_invite] listen failed:', err)
     )
@@ -324,6 +315,21 @@ function FeedInner({ user }: Props) {
   async function signOut() {
     await firebaseSignOut(auth)
     router.push('/auth')
+  }
+
+  async function startChat(targetUser: OnlineUser) {
+    if (targetUser.user_id === user.uid || !profile) return
+    const roomKey = push(ref(rtdb, 'rooms')).key!
+    await set(ref(rtdb, `chat_invites/${targetUser.user_id}`), {
+      from_uid: user.uid,
+      from_username: profile.username,
+      from_avatar: profile.avatar_letter,
+      from_flag: profile.flag,
+      from_language: profile.language,
+      room_id: roomKey,
+      at: Date.now(),
+    }).catch((err) => console.error('[chat_invite] write failed:', err))
+    setActiveRoomId(roomKey)
   }
 
   const filtered = posts
@@ -527,7 +533,7 @@ function FeedInner({ user }: Props) {
 
       <RightPanel
         stats={liveStats} hotPosts={hotPosts} onlineUsers={onlineUsers} countryDist={countryDist}
-        onUserClick={(u) => { if (u.user_id !== user.uid) setChatTarget(u) }}
+        onUserClick={(u) => startChat(u)}
       />
 
       <button className={`mobile-fab${showModal ? ' hidden' : ''}`} onClick={openModal} onTouchEnd={(e) => { e.preventDefault(); openModal() }} aria-label="글쓰기">
@@ -573,7 +579,7 @@ function FeedInner({ user }: Props) {
                   onClick={() => {
                     if (u.user_id === user.uid) return
                     setShowMobileOnline(false)
-                    setChatTarget(u)
+                    startChat(u)
                   }}
                 >
                   <div style={{
@@ -613,19 +619,16 @@ function FeedInner({ user }: Props) {
         />
       )}
       {showAdminPanel && <AdminPanel onClose={() => setShowAdminPanel(false)} />}
-      {chatTarget && profile && (
-        <DirectChatModal
+      {activeRoomId && profile && (
+        <GroupChatModal
           myUserId={user.uid}
           myUsername={profile.username}
           myAvatarLetter={profile.avatar_letter}
           myFlag={profile.flag}
           myLanguage={profile.language}
-          targetUserId={chatTarget.user_id}
-          targetUsername={chatTarget.username}
-          targetAvatarLetter={chatTarget.avatar_letter}
-          targetFlag={chatTarget.flag}
-          targetLanguage={(chatTarget.language || 'ko') as 'ko' | 'en' | 'zh'}
-          onClose={() => setChatTarget(null)}
+          roomId={activeRoomId}
+          onlineUsers={onlineUsers}
+          onClose={() => setActiveRoomId(null)}
         />
       )}
     </div>
