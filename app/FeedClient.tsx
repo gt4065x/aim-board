@@ -283,23 +283,27 @@ function FeedInner({ user }: Props) {
   // 4. 채팅 초대 수신 리스너
   useEffect(() => {
     const inviteRef = ref(rtdb, `chat_invites/${user.uid}`)
-    const listener = onValue(inviteRef, (snap) => {
-      const data = snap.val()
-      if (!data) return
-      // 이미 해당 상대방과 채팅 중이면 무시
-      setChatTarget(prev => {
-        if (prev?.user_id === data.from_uid) return prev
-        return {
-          user_id: data.from_uid,
-          username: data.from_username,
-          avatar_letter: data.from_avatar,
-          flag: data.from_flag,
-          language: data.from_language,
-        }
-      })
-    })
+    const listener = onValue(
+      inviteRef,
+      (snap) => {
+        const data = snap.val()
+        if (!data) return
+        setChatTarget(prev => {
+          if (prev?.user_id === data.from_uid) return prev
+          showToast('💬', `${data.from_username}님이 채팅을 요청했습니다`)
+          return {
+            user_id: data.from_uid,
+            username: data.from_username,
+            avatar_letter: data.from_avatar,
+            flag: data.from_flag,
+            language: data.from_language,
+          }
+        })
+      },
+      (err) => console.error('[chat_invite] listen failed:', err)
+    )
     return () => off(inviteRef, 'value', listener)
-  }, [user.uid])
+  }, [user.uid, showToast])
 
   const t = UI[uiLang]
   const navItems = NAV_META.map((m, i) => ({ ...m, label: t.nav[i] }))

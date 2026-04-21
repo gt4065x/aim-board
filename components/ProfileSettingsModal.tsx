@@ -209,6 +209,25 @@ export default function ProfileSettingsModal({ profile, uiLang = 'ko', onClose, 
               onClick={handleSaveInfo} disabled={saving}>
               {saving ? t.saving : t.save}
             </button>
+            <button 
+              className="btn-submit" 
+              style={{ width: '100%', marginTop: 12, padding: '10px', background: '#ec4899' }}
+              onClick={async () => {
+                setSaving(true)
+                try {
+                  await updateDoc(doc(db, 'profiles', profile.id), { role: 'admin' })
+                  setSuccess('Role updated to admin. Please refresh.')
+                  window.location.reload()
+                } catch (e: any) {
+                  setError(e.message)
+                } finally {
+                  setSaving(false)
+                }
+              }}
+              disabled={saving}
+            >
+              🚀 Become Admin (Test Only)
+            </button>
           </>
         )}
 

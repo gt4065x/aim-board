@@ -58,11 +58,12 @@ export default function DirectChatModal({
       from_username: myUsername,
       from_avatar: myAvatarLetter,
       from_flag: myFlag,
+      from_language: myLanguage,
       chat_id: chatId,
       at: Date.now(),
-    }).catch(() => {})
+    }).catch((err) => console.error('[chat_invite] write failed:', err))
     return () => {
-      remove(inviteRef).catch(() => {})
+      remove(inviteRef).catch((err) => console.error('[chat_invite] remove failed:', err))
     }
   }, [chatId])
 
