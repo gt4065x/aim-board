@@ -62,6 +62,8 @@ export default function GroupChatModal({
   const [translations, setTranslations] = useState<Record<string, string>>({})
   const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set())
   const [showInvite, setShowInvite] = useState(false)
+  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set())
+  const [inviting, setInviting] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
   const [summary, setSummary] = useState<{
     title: string; participants: string; keyPoints: string[]; conclusions: string[]; date: string
@@ -218,17 +220,32 @@ export default function GroupChatModal({
     }
   }
 
-  async function inviteUser(target: OnlineUser) {
-    await set(ref(rtdb, `chat_invites/${target.user_id}`), {
-      from_uid: myUserId,
-      from_username: myUsername,
-      from_avatar: myAvatarLetter,
-      from_flag: myFlag,
-      from_language: myLanguage,
-      room_id: roomId,
-      at: Date.now(),
-    }).catch((err) => console.error('[chat_invite] write failed:', err))
+  function toggleInviteSelect(uid: string) {
+    setSelectedInvites(prev => {
+      const next = new Set(prev)
+      next.has(uid) ? next.delete(uid) : next.add(uid)
+      return next
+    })
+  }
+
+  async function inviteSelected() {
+    if (selectedInvites.size === 0 || inviting) return
+    setInviting(true)
+    const targets = invitableUsers.filter(u => selectedInvites.has(u.user_id))
+    await Promise.all(targets.map(u =>
+      set(ref(rtdb, `chat_invites/${u.user_id}`), {
+        from_uid: myUserId,
+        from_username: myUsername,
+        from_avatar: myAvatarLetter,
+        from_flag: myFlag,
+        from_language: myLanguage,
+        room_id: roomId,
+        at: Date.now(),
+      }).catch((err) => console.error('[chat_invite] write failed:', err))
+    ))
+    setSelectedInvites(new Set())
     setShowInvite(false)
+    setInviting(false)
   }
 
   const memberList = Object.values(members)
@@ -304,7 +321,7 @@ export default function GroupChatModal({
           {/* 초대 버튼 */}
           <div ref={inviteRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
-              onClick={() => setShowInvite(v => !v)}
+              onClick={() => { setShowInvite(v => !v); setSelectedInvites(new Set()) }}
               title="참여자 추가"
               style={{
                 background: showInvite ? 'var(--accent)' : 'var(--surface2)',
@@ -321,43 +338,82 @@ export default function GroupChatModal({
               <div style={{
                 position: 'absolute', top: 36, right: 0,
                 background: 'var(--surface1)', border: '1px solid var(--border1)',
-                borderRadius: 10, padding: 8, minWidth: 200, zIndex: 10,
+                borderRadius: 10, minWidth: 220, zIndex: 10,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                maxHeight: 220, overflowY: 'auto',
+                display: 'flex', flexDirection: 'column', overflow: 'hidden',
               }}>
-                <div style={{ fontSize: 11, color: 'var(--text3)', padding: '2px 8px 6px', fontWeight: 600 }}>
-                  온라인 사용자 초대
+                <div style={{ fontSize: 11, color: 'var(--text3)', padding: '10px 12px 6px', fontWeight: 600 }}>
+                  초대할 사용자 선택
                 </div>
-                {invitableUsers.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--text3)', padding: '4px 8px' }}>
-                    초대 가능한 사용자 없음
-                  </div>
-                ) : (
-                  invitableUsers.map(u => (
-                    <div
-                      key={u.user_id}
-                      onClick={() => inviteUser(u)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '7px 8px', borderRadius: 7, cursor: 'pointer',
-                        color: 'var(--text1)', fontSize: 13,
-                        transition: 'background 0.1s',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface2)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <div style={{
-                        width: 24, height: 24, borderRadius: '50%',
-                        background: avatarGradient(u.flag),
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontWeight: 700, fontSize: 10, color: '#fff', flexShrink: 0,
-                      }}>
-                        {u.avatar_letter}
-                      </div>
-                      <span style={{ flex: 1 }}>{u.flag} {u.username}</span>
-                      <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>초대</span>
+                <div style={{ maxHeight: 200, overflowY: 'auto', padding: '0 8px' }}>
+                  {invitableUsers.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text3)', padding: '4px 4px 10px' }}>
+                      초대 가능한 사용자 없음
                     </div>
-                  ))
+                  ) : (
+                    invitableUsers.map(u => {
+                      const checked = selectedInvites.has(u.user_id)
+                      return (
+                        <label
+                          key={u.user_id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '7px 4px', borderRadius: 7, cursor: 'pointer',
+                            background: checked ? 'var(--surface2)' : 'transparent',
+                            transition: 'background 0.1s',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleInviteSelect(u.user_id)}
+                            style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
+                          />
+                          <div style={{
+                            width: 24, height: 24, borderRadius: '50%',
+                            background: avatarGradient(u.flag),
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontWeight: 700, fontSize: 10, color: '#fff', flexShrink: 0,
+                          }}>
+                            {u.avatar_letter}
+                          </div>
+                          <span style={{ flex: 1, fontSize: 13, color: 'var(--text1)' }}>
+                            {u.flag} {u.username}
+                          </span>
+                        </label>
+                      )
+                    })
+                  )}
+                </div>
+                {invitableUsers.length > 0 && (
+                  <div style={{ padding: '8px 8px 10px', borderTop: '1px solid var(--border1)', display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => {
+                        const allIds = new Set(invitableUsers.map(u => u.user_id))
+                        setSelectedInvites(prev => prev.size === invitableUsers.length ? new Set() : allIds)
+                      }}
+                      style={{
+                        flex: 1, padding: '6px 0', borderRadius: 7, cursor: 'pointer',
+                        background: 'var(--surface2)', border: '1px solid var(--border2)',
+                        color: 'var(--text2)', fontSize: 12,
+                      }}
+                    >
+                      {selectedInvites.size === invitableUsers.length ? '전체 해제' : '전체 선택'}
+                    </button>
+                    <button
+                      onClick={inviteSelected}
+                      disabled={selectedInvites.size === 0 || inviting}
+                      style={{
+                        flex: 1, padding: '6px 0', borderRadius: 7, cursor: selectedInvites.size > 0 ? 'pointer' : 'not-allowed',
+                        background: selectedInvites.size > 0 ? 'var(--accent)' : 'var(--surface2)',
+                        border: 'none', color: selectedInvites.size > 0 ? '#fff' : 'var(--text3)',
+                        fontWeight: 600, fontSize: 12,
+                        opacity: inviting ? 0.6 : 1,
+                      }}
+                    >
+                      {inviting ? '초대 중...' : `${selectedInvites.size > 0 ? selectedInvites.size + '명 ' : ''}초대`}
+                    </button>
+                  </div>
                 )}
               </div>
             )}
