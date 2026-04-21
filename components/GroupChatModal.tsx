@@ -365,6 +365,8 @@ export default function GroupChatModal({
                         >
                           <input
                             type="checkbox"
+                            id={`invite-${u.user_id}`}
+                            name={`invite-${u.user_id}`}
                             checked={checked}
                             onChange={() => toggleInviteSelect(u.user_id)}
                             style={{ accentColor: 'var(--accent)', width: 15, height: 15, flexShrink: 0 }}
@@ -604,7 +606,10 @@ export default function GroupChatModal({
         }}>
           <input
             ref={inputRef}
+            id="group-chat-message"
+            name="message"
             type="text"
+            autoComplete="off"
             placeholder={`메시지 입력 (${LANG_LABEL[myLanguage]})`}
             value={input}
             onChange={(e) => setInput(e.target.value)}
